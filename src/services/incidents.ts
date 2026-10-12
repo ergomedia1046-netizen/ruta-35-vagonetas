@@ -2,6 +2,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 
 export async function reportCombinedIncident(db: PrismaClient, bookingId: string, driverId: string) {
   return db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "Booking" WHERE id = ${bookingId} FOR UPDATE`;
     const actor = await tx.user.findUnique({ where: { id: driverId } });
     const booking = await tx.booking.findUnique({
       where: { id: bookingId },
@@ -18,6 +19,8 @@ export async function reportCombinedIncident(db: PrismaClient, bookingId: string
       .filter((part) => part.kind === "QR" ? part.status !== "VERIFIED" : part.status !== "RECEIVED")
       .reduce((sum, part) => sum + part.amountBs, 0);
     if (outstanding <= 0) throw new Error("no outstanding payment");
+    const openIncident = await tx.incident.findFirst({ where: { bookingId, status: "OPEN" } });
+    if (openIncident) throw new Error("an open incident already exists");
     const incident = await tx.incident.create({ data: {
       bookingId, reportedById: driverId, amountBs: outstanding
     }});
@@ -41,6 +44,7 @@ export async function reviewIncident(db: PrismaClient, incidentId: string, admin
   decision: "SUBSTANTIATED" | "NOT_SUBSTANTIATED", notes: string) {
   return db.$transaction(async (tx) => {
     const admin = await tx.user.findUnique({ where: { id: adminId } });
+    await tx.$queryRaw`SELECT id FROM "Incident" WHERE id = ${incidentId} FOR UPDATE`;
     const incident = await tx.incident.findUnique({ where: { id: incidentId } });
     if (!admin || admin.role !== "ADMIN" || !admin.active || !incident || incident.status !== "OPEN")
       throw new Error("incident is not reviewable");
@@ -58,6 +62,7 @@ export async function reviewIncident(db: PrismaClient, incidentId: string, admin
 export async function restrictCombinedPayment(db: PrismaClient, incidentId: string, adminId: string, reason: string) {
   return db.$transaction(async (tx) => {
     const admin = await tx.user.findUnique({ where: { id: adminId } });
+    await tx.$queryRaw`SELECT id FROM "Incident" WHERE id = ${incidentId} FOR UPDATE`;
     const incident = await tx.incident.findUnique({
       where: { id: incidentId }, include: { booking: true, restriction: true }
     });
@@ -66,6 +71,7 @@ export async function restrictCombinedPayment(db: PrismaClient, incidentId: stri
       || !incident.booking.passengerId || incident.restriction)
       throw new Error("incident is not eligible for restriction");
     const userId = incident.booking.passengerId;
+    await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
     const restriction = await tx.paymentRestriction.create({
       data: { userId, incidentId, createdById: adminId, reason }
     });
@@ -81,6 +87,7 @@ export async function restrictCombinedPayment(db: PrismaClient, incidentId: stri
 export async function correctIncident(db: PrismaClient, incidentId: string, adminId: string, reason: string) {
   return db.$transaction(async (tx) => {
     const admin = await tx.user.findUnique({ where: { id: adminId } });
+    await tx.$queryRaw`SELECT id FROM "Incident" WHERE id = ${incidentId} FOR UPDATE`;
     const incident = await tx.incident.findUnique({ where: { id: incidentId }, include: { restriction: true } });
     if (!admin || admin.role !== "ADMIN" || !admin.active || !incident || incident.status === "CORRECTED")
       throw new Error("incident cannot be corrected");
