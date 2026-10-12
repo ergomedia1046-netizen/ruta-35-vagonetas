@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { validatePaymentParts, type PaymentMethod } from "../domain/booking.js";
 
 export async function createPayment(db: PrismaClient, args: {
@@ -21,7 +21,7 @@ export async function createPayment(db: PrismaClient, args: {
   });
 }
 
-async function refreshPaymentStatus(tx: Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0], paymentId: string) {
+async function refreshPaymentStatus(tx: Prisma.TransactionClient, paymentId: string) {
   const payment = await tx.payment.findUnique({ where: { id: paymentId }, include: { parts: true } });
   if (!payment) return;
   const allPaid = payment.parts.every((part) => part.kind === "QR" ? part.status === "VERIFIED" : part.status === "RECEIVED");
