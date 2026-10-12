@@ -32,6 +32,54 @@ export async function assignBooking(db: Db, bookingId: string, vehicleId: string
       requestedPassengers: booking.passengers,
       kind: booking.kind
     });
+    const earlier = await tx.booking.findMany({
+      where: { direction: booking.direction, status: "CONFIRMED", confirmedAt: { not: null }, assignment: { is: null } },
+      orderBy: [{ confirmedAt: "asc" }, { createdAt: "asc" }],
+      select: { id: true, passengers: true, kind: true, direction: true }
+    });
+    for (const candidate of earlier) {
+      try {
+        assertCanAssign({
+          direction: current[0]?.booking.direction ?? candidate.direction,
+          requestedDirection: candidate.direction,
+          occupiedSeats,
+          requestedPassengers: candidate.passengers,
+          kind: candidate.kind
+        });
+        if (candidate.id !== bookingId) throw new Error("earlier compatible booking has priority");
+        break;
+      } catch (error) {
+        if (error instanceof Error && error.message === "earlier compatible booking has priority") throw error;
+      }
+    }
+    const queue = await tx.queueEntry.findMany({
+      where: { direction: booking.direction, active: true },
+      orderBy: [{ arrivedAt: "asc" }, { position: "asc" }],
+      select: { vehicleId: true }
+    });
+    if (queue.length > 0) {
+      let firstFeasibleVehicle: string | null = null;
+      for (const entry of queue) {
+        const entries = await tx.assignment.findMany({
+          where: { vehicleId: entry.vehicleId, booking: { status: { in: ["ASSIGNED", "CONFIRMED"] } } },
+          include: { booking: { select: { passengers: true, kind: true, direction: true } } }
+        });
+        const seats = entries.reduce((n, a) => n + a.booking.passengers, 0);
+        try {
+          assertCanAssign({
+            direction: entries[0]?.booking.direction ?? booking.direction,
+            requestedDirection: booking.direction, occupiedSeats: seats,
+            requestedPassengers: booking.passengers, kind: booking.kind
+          });
+          firstFeasibleVehicle = entry.vehicleId;
+          break;
+        } catch {
+          continue;
+        }
+      }
+      if (firstFeasibleVehicle && firstFeasibleVehicle !== vehicleId)
+        throw new Error("vehicle queue priority");
+    }
     const assignment = await tx.assignment.create({ data: { bookingId, vehicleId } });
     await tx.booking.update({ where: { id: bookingId }, data: { status: "ASSIGNED" } });
     await tx.auditEvent.create({ data: {
