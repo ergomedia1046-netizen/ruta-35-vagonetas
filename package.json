@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
-    "start": "node dist/src/server.js"
+    "start": "node dist/src/server.js",
+    "bootstrap:admin": "node dist/src/scripts/bootstrap-admin.js"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
