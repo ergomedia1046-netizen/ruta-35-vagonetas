@@ -50,7 +50,7 @@ Requisitos: Node.js 22+, pnpm o npm, Android Studio/ADB si se compila localmente
 ```powershell
 $env:EXPO_PUBLIC_API_BASE_URL = "https://URL-HTTPS-DEL-BACKEND-DE-PRUEBAS"
 cd apps/passenger
-npm install
+npx --yes yarn@1.22.22 install
 npx expo start
 ```
 

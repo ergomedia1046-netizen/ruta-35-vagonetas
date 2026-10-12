@@ -17,7 +17,7 @@ describe("Ruta35Api", () => {
   });
   it("preserves server error codes and treats disconnects as connection errors", async () => {
     const failed = new Ruta35Api("https://api.example.test", store, vi.fn(async () => new Response('{"error":"forbidden"}', { status: 403 })) as typeof fetch);
-    await expect(failed.me()).rejects.toMatchObject<ApiError>({ status: 403, code: "forbidden" });
+    await expect(failed.me()).rejects.toMatchObject({ status: 403, code: "forbidden" });
     const disconnected = new Ruta35Api("https://api.example.test", store, vi.fn(async () => { throw new TypeError("offline"); }) as typeof fetch);
     await expect(disconnected.me()).rejects.toMatchObject({ status: 0, code: "connection_unavailable" });
   });
