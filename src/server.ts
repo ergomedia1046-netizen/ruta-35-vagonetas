@@ -1,11 +1,52 @@
 import Fastify from "fastify";
 import { z } from "zod";
 import { quoteFare } from "./domain/booking.js";
-import { authPlugin } from "./plugins/auth.js";
+import { authPlugin, requireRole } from "./plugins/auth.js";
+import { prisma } from "./db.js";
+import { cancelPendingBooking, createBooking, listPassengerBookings } from "./services/bookings.js";
 
 const app = Fastify({ logger: { redact: ["req.headers.authorization", "req.headers.cookie"] } });
 await app.register(authPlugin);
 app.get("/health", async () => ({ status: "ok", service: "ruta-35-api" }));
+
+app.post("/api/v1/bookings", { preHandler: requireRole("PASSENGER") }, async (request, reply) => {
+  const body = z.object({
+    direction: z.enum(["YACUIBA_TO_VILLAMONTES", "VILLAMONTES_TO_YACUIBA"]),
+    origin: z.string().min(3).max(80), destination: z.string().min(3).max(80),
+    pickupPoint: z.string().min(2).max(200), pickupReference: z.string().max(300).optional(),
+    passengers: z.number().int().min(1).max(7),
+    kind: z.enum(["ORDINARY", "EXPRESS"]).default("ORDINARY"),
+    paymentMethod: z.enum(["CASH", "QR", "COMBINED"]),
+    qrBs: z.number().int().nonnegative().default(0),
+    cashBs: z.number().int().nonnegative().default(0)
+  }).safeParse(request.body);
+  const key = request.headers["idempotency-key"];
+  if (!body.success || typeof key !== "string" || key.length < 8 || key.length > 128)
+    return reply.code(400).send({ error: "invalid_request" });
+  try {
+    const booking = await createBooking(prisma, {
+      ...body.data, passengerId: request.authUser!.id,
+      idempotencyKey: key,
+      pickupReference: body.data.pickupReference
+    });
+    return reply.code(201).send(booking);
+  } catch (error) {
+    return reply.code(400).send({ error: error instanceof Error ? error.message : "invalid_booking" });
+  }
+});
+app.get("/api/v1/bookings", { preHandler: requireRole("PASSENGER") }, async (request) => {
+  return listPassengerBookings(prisma, request.authUser!.id);
+});
+app.post("/api/v1/bookings/:id/cancel", { preHandler: requireRole("PASSENGER") }, async (request, reply) => {
+  const params = z.object({ id: z.string().min(1) }).safeParse(request.params);
+  if (!params.success) return reply.code(400).send({ error: "invalid_request" });
+  try {
+    return await cancelPendingBooking(prisma, params.data.id, request.authUser!.id);
+  } catch {
+    return reply.code(404).send({ error: "booking_not_found_or_not_cancellable" });
+  }
+});
+
 app.get("/api/v1/quote", async (request, reply) => {
   const query = z.object({
     passengers: z.coerce.number().int().min(1).max(7),
