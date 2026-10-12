@@ -63,8 +63,14 @@ export const authPlugin: FastifyPluginAsync = async (app) => {
 };
 
 export function requireRole(...roles: Array<"PASSENGER" | "DRIVER" | "ADMIN">) {
-  return async (request: FastifyRequest, reply: { code: (status: number) => { send: (body: unknown) => unknown } }) => {
-    if (!request.authUser) return reply.code(401).send({ error: "unauthorized" });
-    if (!roles.includes(request.authUser.role)) return reply.code(403).send({ error: "forbidden" });
+  return async (request: FastifyRequest, reply: import("fastify").FastifyReply): Promise<void> => {
+    if (!request.authUser) {
+      reply.code(401).send({ error: "unauthorized" });
+      return;
+    }
+    if (!roles.includes(request.authUser.role)) {
+      reply.code(403).send({ error: "forbidden" });
+      return;
+    }
   };
 }
