@@ -3,7 +3,7 @@
 ## Controles implementados
 
 - Contraseñas Argon2id; login limitado a cinco intentos por minuto.
-- Sesiones opacas aleatorias almacenadas como SHA-256, expiración 12 h, revocación y cookie HttpOnly/SameSite Strict; Secure en producción.
+- Sesiones opacas aleatorias almacenadas con HMAC-SHA-256 usando SESSION_SECRET, expiración 12 h, revocación y cookie HttpOnly/SameSite Strict; Secure en producción.
 - Control de roles y propiedad en backend; reserva creada con clave de idempotencia única.
 - Asignación serializable con bloqueo de filas y capacidad recalculada en servidor.
 - Auditoría de altas, confirmaciones, asignaciones, cobros, revisión de pagos, incidentes, restricciones, correcciones y estados de vehículos.
