@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     region: virginia
-    buildCommand: npm ci && npm run db:generate && npm run build
+    buildCommand: npm ci --include=dev && npm run db:generate && npm run build
     startCommand: npm run db:migrate && npm run bootstrap:admin && npm run start
     healthCheckPath: /health
     autoDeploy: true
