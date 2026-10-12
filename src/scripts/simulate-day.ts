@@ -71,7 +71,7 @@ async function run() {
   const roads = Array.from({length:10},(_,i)=>({id:i+1,at:plus(start,Math.floor(random()*690)),direction:directions[Math.floor(random()*2)]!,assigned:false})).sort((a,b)=>a.at.getTime()-b.at.getTime());
   const bookings = new Map<string,Booking>();
   const rows: TripRow[] = [];
-  let attemptedDepartures=0, attemptedRoads=0, failedAssignments=0;
+  let attemptedDepartures=0, attemptedRoads=0, assignmentErrors=0, unservedRequests=0;
   const rejectedRoads: Array<{at:Date;direction:Direction;reason:string}> = [];
   const makeBooking=async (direction:Direction,kind:"ORDINARY"|"EXPRESS",passengers:number,at:Date,road:boolean,roadRequestId?:number):Promise<Booking>=>{
     const fare=kind==="EXPRESS"?245:35*passengers;
@@ -102,13 +102,13 @@ async function run() {
     }
     queued.sort((a,b)=>a.arrivedAt.getTime()-b.arrivedAt.getTime());
     const vehicle=queued[0]?.vehicle;
-    if(!vehicle){row.error="sin vehículo disponible en origen a la hora planificada";failedAssignments+=cohort.length;for(const b of cohort.filter(x=>x.road))rejectedRoads.push({at:b.requestAt,direction:b.direction,reason:row.error});continue;}
+    if(!vehicle){row.error="sin vehículo disponible en origen a la hora planificada";unservedRequests+=cohort.length;for(const b of cohort.filter(x=>x.road))rejectedRoads.push({at:b.requestAt,direction:b.direction,reason:row.error});continue;}
     const tripBookings:Booking[]=[];
     for(const b of cohort){
       try {
         await api("POST","/api/v1/driver/assignments",{bookingId:b.id,vehicleId:vehicle.id});
         tripBookings.push(b);
-      } catch(e) { failedAssignments++; const reason=e instanceof Error?e.message:"asignación rechazada por reglas";if(b.road)rejectedRoads.push({at:b.requestAt,direction:b.direction,reason});if(!row.error) row.error=reason; }
+      } catch(e) { assignmentErrors++;unservedRequests++; const reason=e instanceof Error?e.message:"asignación rechazada por reglas";if(b.road)rejectedRoads.push({at:b.requestAt,direction:b.direction,reason});if(!row.error) row.error=reason; }
     }
     if(!tripBookings.length)continue;
     const depart=plus(slot.at,5); const arrival=plus(depart,travelMinutes);
@@ -129,7 +129,7 @@ async function run() {
     attemptedRoads++;
     await makeBooking(r.direction,"ORDINARY",1,r.at,true,r.id);
     rejectedRoads.push({at:r.at,direction:r.direction,reason:"reserva creada; no existe salida ordinaria compatible antes de las 20:00"});
-    failedAssignments++;
+    unservedRequests++;
   }
   const valid=rows.filter(x=>x.status==="COMPLETED"||x.status==="COMPLETED_PARTIAL");
   const departed=rows.filter(x=>x.departed);
@@ -140,16 +140,17 @@ async function run() {
   check(departed.every(x=>x.passengers<=7),"capacity <= 7");
   check(rows.filter(x=>x.kind==="EXPRESS").every(x=>x.status!=="COMPLETED"||x.passengers===7),"express uses seven seats");
   const waitCount=departed.reduce((n,x)=>n+(x.requests??0),0);
-  const totals={completed:valid.length,inProgress:rows.filter(x=>x.status==="IN_PROGRESS_AT_20:00").length,rejected:rows.filter(x=>x.status==="REJECTED").length,partial:rows.filter(x=>x.status==="COMPLETED_PARTIAL").length,passengersDeparted:departed.reduce((n,x)=>n+x.passengers,0),passengersArrived:valid.reduce((n,x)=>n+x.passengers,0),roadDeparted:departed.reduce((n,x)=>n+x.roadPassengers,0),roadArrived:valid.reduce((n,x)=>n+x.roadPassengers,0),fare:departed.reduce((n,x)=>n+x.fare,0),meanWait:waitCount?departed.reduce((n,x)=>n+(x.wait??0)*(x.requests??0),0)/waitCount:0,assignmentErrors:failedAssignments};
-  let report=`# Simulación reproducible del día completo\n\n**Entorno:** PostgreSQL 16 temporal de GitHub Actions · datos ficticios · pagos no cobrados · entorno de pruebas\n**Semilla:** ${seed} · **Fecha simulada:** 15-01-2026 · **Ventana solicitada:** 08:00–20:00 hora de Bolivia (reloj simulado) · **Viaje:** ${travelMinutes} min · **Abordaje:** 5 min · **Retorno a cola:** ${turnaroundMinutes} min\n\nLa simulación intenta 20 salidas ordinarias, 3 expresas y 10 solicitudes de pasajeros de carretera. Las reservas y asignaciones pasan por rutas HTTP de Fastify; el reloj y los cierres de viajes son simulados. Las salidas parciales, los rechazos y sus motivos se informan por separado. Tarifas representan importes simulados, no dinero recibido.\n\n## Resultado\n\n| Salidas intentadas | Completadas | Parciales | Rechazadas sin salida | En ruta a las 20:00 | Solicitudes carretera intentadas | Pasajeros salidos | Llegaron | Carretera abordaron | Carretera llegaron | Tarifa simulada (Bs) | Cobro real (Bs) | Espera media (min) | Errores de asignación |\n|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n| 23 | ${totals.completed} | ${totals.partial} | ${totals.rejected} | ${totals.inProgress} | ${attemptedRoads} | ${totals.passengersDeparted} | ${totals.passengersArrived} | ${totals.roadDeparted} | ${totals.roadArrived} | ${totals.fare} | 0 | ${totals.meanWait.toFixed(1)} | ${totals.assignmentErrors} |\n\n## Detalle de salidas\n\n| # | Tipo | Dirección | Hora planificada | Salida | Llegada | Vehículo | Pasajeros | Carretera | Ocupación | Bs simulados | Espera | Estado / motivo |\n|---:|---|---|---|---|---|---|---:|---:|---:|---:|---:|---|\n`;
+  const totals={completed:valid.length,inProgress:rows.filter(x=>x.status==="IN_PROGRESS_AT_20:00").length,rejected:rows.filter(x=>x.status==="REJECTED").length,partial:rows.filter(x=>x.status==="COMPLETED_PARTIAL").length,passengersDeparted:departed.reduce((n,x)=>n+x.passengers,0),passengersArrived:valid.reduce((n,x)=>n+x.passengers,0),roadDeparted:departed.reduce((n,x)=>n+x.roadPassengers,0),roadArrived:valid.reduce((n,x)=>n+x.roadPassengers,0),fare:departed.reduce((n,x)=>n+x.fare,0),meanWait:waitCount?departed.reduce((n,x)=>n+(x.wait??0)*(x.requests??0),0)/waitCount:0,assignmentErrors,unservedRequests};
+  let report=`# Simulación reproducible del día completo\n\n**Entorno:** PostgreSQL 16 temporal de GitHub Actions · datos ficticios · pagos no cobrados · entorno de pruebas\n**Semilla:** ${seed} · **Fecha simulada:** 15-01-2026 · **Ventana solicitada:** 08:00–20:00 hora de Bolivia (reloj simulado) · **Viaje:** ${travelMinutes} min · **Abordaje:** 5 min · **Retorno a cola:** ${turnaroundMinutes} min\n\nLa simulación intenta 20 salidas ordinarias, 3 expresas y 10 solicitudes de pasajeros de carretera. Las reservas y asignaciones pasan por rutas HTTP de Fastify; el reloj y los cierres de viajes son simulados. Las salidas parciales, los rechazos y sus motivos se informan por separado. Tarifas representan importes simulados, no dinero recibido.\n\n## Resultado\n\n| Salidas intentadas | Completadas | Parciales | Rechazadas sin salida | En ruta a las 20:00 | Solicitudes carretera intentadas | Pasajeros salidos | Llegaron | Carretera abordaron | Carretera llegaron | Tarifa simulada (Bs) | Cobro real (Bs) | Espera media (min) | Errores HTTP de asignación | Solicitudes no servidas |\n|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n| 23 | ${totals.completed} | ${totals.partial} | ${totals.rejected} | ${totals.inProgress} | ${attemptedRoads} | ${totals.passengersDeparted} | ${totals.passengersArrived} | ${totals.roadDeparted} | ${totals.roadArrived} | ${totals.fare} | 0 | ${totals.meanWait.toFixed(1)} | ${totals.assignmentErrors} | ${totals.unservedRequests} |\n\n## Detalle de salidas\n\n| # | Tipo | Dirección | Hora planificada | Salida | Llegada | Vehículo | Pasajeros | Carretera | Ocupación | Bs simulados | Espera | Estado / motivo |\n|---:|---|---|---|---|---|---|---:|---:|---:|---:|---:|---|\n`;
   for(const r of rows)report+=`| ${r.seq} | ${r.kind} | ${r.direction===directions[0]?"Yacuiba–Villamontes":"Villamontes–Yacuiba"} | ${fmt(r.scheduled)} | ${fmt(r.departed)} | ${fmt(r.arrived)} | ${r.plate??"—"} | ${r.passengers} | ${r.roadPassengers} | ${r.passengers}/7 | ${r.fare} | ${r.wait??"—"} | ${r.error?`Rechazado: ${r.error.replaceAll("|","/")}`:r.status} |\n`;
   report+=`\n## Solicitudes de carretera rechazadas\n\n| Solicitada | Dirección | Motivo |\n|---|---|---|\n`;
   for(const r of rejectedRoads)report+=`| ${fmt(r.at)} | ${r.direction===directions[0]?"Yacuiba–Villamontes":"Villamontes–Yacuiba"} | ${r.reason} |\n`;
-  report+=`\n## Comprobaciones\n\n- Salidas intentadas: ${attemptedDepartures}/23.\n- Solicitudes de carretera intentadas: ${attemptedRoads}/10; ${totals.roadArrived} pasajeros de carretera llegaron a destino.\n- Capacidad máxima en salidas: ${Math.max(0,...departed.map(x=>x.passengers))}/7.\n- Expresos con siete asientos asignados: ${departed.filter(x=>x.kind==="EXPRESS"&&x.passengers===7).length}/3.\n- Viajes completados: ${totals.completed}; viajes aún en ruta a las 20:00: ${totals.inProgress}.\n- Errores/rechazos de asignación: ${totals.assignmentErrors}; se conservan y no se fuerzan.\n\n## Límites\n\nSin integración de ubicación ni eventos de paradas en el modelo actual, ubicación, recorrido y retorno se anotan en este reloj sintético. Los importes son tarifas simuladas de reservas salidas; cobro real: Bs 0. Pagos no se liquidan. No usar esta salida para operaciones reales.\n`;
+  report+=`\n## Comprobaciones\n\n- Salidas intentadas: ${attemptedDepartures}/23.\n- Solicitudes de carretera intentadas: ${attemptedRoads}/10; ${totals.roadArrived} pasajeros de carretera llegaron a destino.\n- Capacidad máxima en salidas: ${Math.max(0,...departed.map(x=>x.passengers))}/7.\n- Expresos con siete asientos asignados: ${departed.filter(x=>x.kind==="EXPRESS"&&x.passengers===7).length}/3.\n- Viajes completados: ${totals.completed}; viajes aún en ruta a las 20:00: ${totals.inProgress}.\n- Errores HTTP de asignación: ${totals.assignmentErrors}; solicitudes no servidas por capacidad, disponibilidad o cierre de ventana: ${totals.unservedRequests}.\n\n## Límites\n\nSin integración de ubicación ni eventos de paradas en el modelo actual, ubicación, recorrido y retorno se anotan en este reloj sintético. Los importes son tarifas simuladas de reservas salidas; cobro real: Bs 0. Pagos no se liquidan. No usar esta salida para operaciones reales.\n`;
   const path=resolve("docs/SIMULACION_DIA_COMPLETO.md"); await mkdir(resolve("docs"),{recursive:true}); await writeFile(path,report,"utf8");
   await app.close(); await prisma.$disconnect();
   return {report,totals,attemptedDepartures,attemptedRoads};
 }
 
 run().then(({report,totals,attemptedDepartures,attemptedRoads})=>{console.log("SIMULATION_REPORT_BEGIN");console.log(report);console.log("SIMULATION_REPORT_END");console.log(JSON.stringify({totals,attemptedDepartures,attemptedRoads}));}).catch(async e=>{console.error(e);await prisma.$disconnect();process.exitCode=1;});
+
 
