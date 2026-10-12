@@ -52,4 +52,3 @@ jobs:
           path: docs/SIMULACION_DIA_COMPLETO.md
           if-no-files-found: warn
       - run: npm audit
-

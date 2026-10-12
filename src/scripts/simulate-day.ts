@@ -152,5 +152,3 @@ async function run() {
 }
 
 run().then(({report,totals,attemptedDepartures,attemptedRoads})=>{console.log("SIMULATION_REPORT_BEGIN");console.log(report);console.log("SIMULATION_REPORT_END");console.log(JSON.stringify({totals,attemptedDepartures,attemptedRoads}));}).catch(async e=>{console.error(e);await prisma.$disconnect();process.exitCode=1;});
-
-
