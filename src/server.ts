@@ -21,6 +21,7 @@ if (!process.env.SESSION_SECRET || Buffer.byteLength(process.env.SESSION_SECRET)
 const app = Fastify({ logger: { redact: ["req.headers.authorization", "req.headers.cookie"] } });
 await app.register(fastifyStatic, { root: join(process.cwd(), "public"), prefix: "/" });
 await app.register(authPlugin);
+app.get("/api/v1/config", async () => ({ testMode: process.env.RUTA35_TEST_MODE === "true" }));
 app.get("/health", async () => ({ status: "ok", service: "ruta-35-api" }));
 
 app.post("/api/v1/driver/incidents", { preHandler: requireRole("DRIVER") }, async (request, reply) => {
