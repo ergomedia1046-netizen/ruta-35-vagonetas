@@ -27,7 +27,8 @@ Para crear la primera cuenta de administración, la base debe estar vacía. Conf
 - Alta de solicitudes autenticadas con clave de idempotencia, consulta por propietario y cancelación solo mientras están pendientes.
 - Confirmación administrativa y asignación transaccional con capacidad, dirección, prioridad temporal compatible y orden de fila.
 - Alta administrativa de usuarios, vehículos, cola y turnos.
-- Recepción de efectivo por el conductor del vehículo asignado; revisión administrativa manual del QR, nunca por captura de pantalla.\n- Reporte de incumplimiento combinado, revisión administrativa, restricción solo para ese método después de una revisión favorable y corrección auditada que puede revertirla.
+- Recepción de efectivo por el conductor del vehículo asignado; revisión administrativa manual del QR, nunca por captura de pantalla.
+- Reporte de incumplimiento combinado, revisión administrativa, restricción solo para ese método después de una revisión favorable y corrección auditada que puede revertirla.
 - Interfaz web de pasajero y panel básico de conductor; operaciones del conductor advierten que se hagan con el vehículo detenido.
 
 ## Verificaciones
