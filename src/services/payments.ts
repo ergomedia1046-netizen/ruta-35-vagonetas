@@ -34,8 +34,15 @@ async function refreshPaymentStatus(tx: Prisma.TransactionClient, paymentId: str
 
 export async function recordCashReceived(db: PrismaClient, paymentId: string, actorId: string) {
   return db.$transaction(async (tx) => {
-    const part = await tx.paymentPart.findFirst({ where: { paymentId, kind: "CASH" } });
+    const part = await tx.paymentPart.findFirst({ where: { paymentId, kind: "CASH" }, include: { payment: { include: { booking: { include: { assignment: true } } } } } });
     if (!part || part.status !== "PENDING") throw new Error("cash part is unavailable");
+    const actor = await tx.user.findUnique({ where: { id: actorId } });
+    if (!actor || !actor.active) throw new Error("active account required");
+    const vehicleId = part.payment.booking.assignment?.vehicleId;
+    if (actor.role !== "ADMIN") {
+      const shift = vehicleId ? await tx.driverShift.findFirst({ where: { userId: actorId, vehicleId, OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }] } }) : null;
+      if (!shift) throw new Error("driver is not assigned to this booking");
+    }
     const updated = await tx.paymentPart.update({ where: { id: part.id }, data: { status: "RECEIVED" } });
     await tx.auditEvent.create({ data: {
       actorId, action: "CASH_RECEIVED", entityType: "PaymentPart", entityId: part.id,
