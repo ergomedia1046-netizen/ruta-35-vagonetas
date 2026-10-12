@@ -21,6 +21,17 @@ export async function createPayment(db: PrismaClient, args: {
   });
 }
 
+async function refreshPaymentStatus(tx: Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0], paymentId: string) {
+  const payment = await tx.payment.findUnique({ where: { id: paymentId }, include: { parts: true } });
+  if (!payment) return;
+  const allPaid = payment.parts.every((part) => part.kind === "QR" ? part.status === "VERIFIED" : part.status === "RECEIVED");
+  const anyPaid = payment.parts.some((part) => part.kind === "QR" ? part.status === "VERIFIED" : part.status === "RECEIVED");
+  const rejected = payment.parts.some((part) => part.status === "REJECTED");
+  await tx.payment.update({ where: { id: paymentId }, data: {
+    status: allPaid ? "PAID" : rejected ? "REJECTED" : anyPaid ? "PARTIAL" : "PENDING"
+  }});
+}
+
 export async function recordCashReceived(db: PrismaClient, paymentId: string, actorId: string) {
   return db.$transaction(async (tx) => {
     const part = await tx.paymentPart.findFirst({ where: { paymentId, kind: "CASH" } });
