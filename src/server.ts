@@ -1,8 +1,10 @@
 import Fastify from "fastify";
 import { z } from "zod";
 import { quoteFare } from "./domain/booking.js";
+import { authPlugin } from "./plugins/auth.js";
 
 const app = Fastify({ logger: { redact: ["req.headers.authorization", "req.headers.cookie"] } });
+await app.register(authPlugin);
 app.get("/health", async () => ({ status: "ok", service: "ruta-35-api" }));
 app.get("/api/v1/quote", async (request, reply) => {
   const query = z.object({
