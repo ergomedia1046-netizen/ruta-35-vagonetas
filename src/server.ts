@@ -1,4 +1,6 @@
 import Fastify from "fastify";
+import fastifyStatic from "@fastify/static";
+import { join } from "node:path";
 import { z } from "zod";
 import { quoteFare } from "./domain/booking.js";
 import { authPlugin, requireRole } from "./plugins/auth.js";
@@ -9,6 +11,7 @@ import { assignBooking } from "./services/dispatch.js";
 import { recordCashReceived, verifyQrManually } from "./services/payments.js";
 
 const app = Fastify({ logger: { redact: ["req.headers.authorization", "req.headers.cookie"] } });
+await app.register(fastifyStatic, { root: join(process.cwd(), "public"), prefix: "/" });
 await app.register(authPlugin);
 app.get("/health", async () => ({ status: "ok", service: "ruta-35-api" }));
 
