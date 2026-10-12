@@ -18,6 +18,14 @@ await app.register(fastifyStatic, { root: join(process.cwd(), "public"), prefix:
 await app.register(authPlugin);
 app.get("/health", async () => ({ status: "ok", service: "ruta-35-api" }));
 
+app.get("/api/v1/admin/bookings/pending", { preHandler: requireRole("ADMIN") }, async () => {
+  return prisma.booking.findMany({
+    where: { status: "PENDING" },
+    select: { id: true, direction: true, origin: true, destination: true, pickupPoint: true, pickupReference: true,
+      passengers: true, kind: true, totalBs: true, paymentMethod: true, createdAt: true },
+    orderBy: { createdAt: "asc" }, take: 100
+  });
+});
 app.get("/api/v1/admin/payments/pending-qr", { preHandler: requireRole("ADMIN") }, async () => {
   return prisma.paymentPart.findMany({
     where: { kind: "QR", status: "PENDING" },
