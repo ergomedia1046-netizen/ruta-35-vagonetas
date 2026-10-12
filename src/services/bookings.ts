@@ -22,6 +22,10 @@ export async function createBooking(db: PrismaClient, args: {
         if (existing.passengerId !== args.passengerId) throw new Error("idempotency key already used");
         return existing;
       }
+      const passenger = await tx.user.findUnique({ where: { id: args.passengerId }, select: { active: true, combinedPaymentRestricted: true } });
+      if (!passenger?.active) throw new Error("passenger account is unavailable");
+      if (args.paymentMethod === "COMBINED" && passenger.combinedPaymentRestricted)
+        throw new Error("combined payment is restricted for this account");
       const booking = await tx.booking.create({ data: {
         passengerId: args.passengerId, direction: args.direction,
         origin: args.origin.trim(), destination: args.destination.trim(),
