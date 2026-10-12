@@ -8,14 +8,14 @@
 6. Pruebas, análisis, CI y correcciones.
 7. Despliegue, copias, recuperación y checklist.
 
-## Estado comprobable
+## Estado verificado
 
-- Etapa 1: completa como documentación y estructura inicial.
-- Etapa 2: parcial. Hay esquema/migración PostgreSQL, login Argon2id con sesión revocable, roles en las rutas y cuentas creadas por administración/bootstrap; falta gestión de cuentas completa, MFA y pruebas de seguridad.
-- Etapa 3: parcial. Tarifas/capacidad, reservas idempotentes, confirmación, cola y asignación transaccional implementadas; falta verificar concurrencia real, reglas completas de carretera y manejo de estados de viaje.
-- Etapa 4: parcial. Componentes efectivo/QR/combinado y revisión manual QR están en servicios; faltan incidentes, restricciones y pruebas de flujos integrados.
-- Etapa 5: parcial. Interfaz pasajero y panel básico conductor; consola administrativa y pantallas de pagos incompletas.
-- Etapa 6: parcial. Unit tests y CI con PostgreSQL. Esperando resultado del último workflow tras fijar dependencias; faltan tests de integración/E2E.
-- Etapa 7: pendiente. Sin hosting, dominio, proveedor QR, backups de producción ni recuperación probada.
+- Etapa 1: completa para arquitectura y documentos iniciales.
+- Etapa 2: parcial. Esquema/migración, login Argon2id, sesiones revocables y permisos de endpoints; faltan MFA, CSRF dedicado y cobertura completa de seguridad.
+- Etapa 3: parcial. Tarifas base, reservas idempotentes, cola, confirmación, asignación serializable, orden compatible y capacidad; quedan por aprobar y codificar las reglas de paradas de carretera.
+- Etapa 4: parcial. Efectivo, QR con revisión manual, combinado, incidentes, restricciones revisadas y corrección; no hay proveedor QR externo ni interfaz de conciliación automatizada.
+- Etapa 5: parcial. Interfaz pasajero, panel conductor y panel administrativo básico; faltan operación completa de turnos, informes y gestión integral de tarifas.
+- Etapa 6: parcial. Unitarias e integración PostgreSQL concurrente están añadidas; GitHub Actions ejecuta DB, tipos, tests, build y npm audit. Confirmar el workflow más reciente después de las últimas migraciones.
+- Etapa 7: pendiente. Sin hosting, dominio, proveedor QR, backups de producción ni restauración ensayada.
 
-No desplegar en producción hasta completar las limitaciones anteriores y obtener CI verde.
+La app sigue en desarrollo. No desplegar en producción hasta que el último CI esté verde, se aprueben reglas de negocio y se completen controles pendientes.
