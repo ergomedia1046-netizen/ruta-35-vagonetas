@@ -4,41 +4,180 @@ import { ApiError, routeNames, type BookingKind, type Direction, type PaymentMet
 import { api, bookingAttemptStore, secureTokenStore } from "../../packages/mobile-core/src/native";
 import { Button, Busy, Card, Field, Heading, Label, Notice, Page, colors } from "../../packages/mobile-core/src/ui";
 
-const explain = (e: unknown) => e instanceof ApiError ? e.code === "connection_unavailable" || e.code === "connection_timeout" ? "No hay conexiÃ³n con Ruta 35. Revisa internet y vuelve a intentar." : `${e.code} (${e.status})` : e instanceof Error ? e.message : "OcurriÃ³ un error inesperado.";
-const pretty: Record<string, string> = { YACUIBA_TO_VILLAMONTES: "Yacuiba â†’ Villamontes", VILLAMONTES_TO_YACUIBA: "Villamontes â†’ Yacuiba", ORDINARY: "Ordinario", EXPRESS: "Expreso", CASH: "Efectivo", QR: "QR manual", COMBINED: "Combinado" };
-const choices = <T extends string>(all: readonly T[], current: T, set: (value: T) => void) => all.map((value) => <Button key={value} title={`${current === value ? "âœ“ " : ""}${pretty[value] ?? value}`} secondary={current !== value} onPress={() => set(value)} />);
+const message = (error: unknown) => {
+  if (error instanceof ApiError) {
+    if (error.status === 0) return "No hay conexion con el servidor. Revisa internet y vuelve a intentar.";
+    return `${error.code} (${error.status})`;
+  }
+  return error instanceof Error ? error.message : "Ocurrio un error inesperado.";
+};
+
+const names: Record<string, string> = {
+  YACUIBA_TO_VILLAMONTES: "Yacuiba a Villamontes",
+  VILLAMONTES_TO_YACUIBA: "Villamontes a Yacuiba",
+  ORDINARY: "Ordinario", EXPRESS: "Expreso", CASH: "Efectivo",
+  QR: "QR manual", COMBINED: "Combinado"
+};
+
+function Options<T extends string>({ values, selected, onSelect }: {
+  values: readonly T[]; selected: T; onSelect: (value: T) => void;
+}) {
+  return <View style={{ gap: 8 }}>{values.map((value) => <Button key={value}
+    title={`${selected === value ? "âœ“ " : ""}${names[value] ?? value}`}
+    secondary={selected !== value} onPress={() => onSelect(value)} />)}</View>;
+}
 
 export default function App() {
-  const [session, setSession] = useState<{ id: string; role: string } | null>(null);
   const [testMode, setTestMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
+  const [session, setSession] = useState<{ id: string; role: string } | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isRegister, setIsRegister] = useState(false);
+  const [registering, setRegistering] = useState(false);
   const [direction, setDirection] = useState<Direction>("YACUIBA_TO_VILLAMONTES");
   const [kind, setKind] = useState<BookingKind>("ORDINARY");
-  const [passengers, setPassengers] = useState("1");
+  const [passengerText, setPassengerText] = useState("1");
   const [pickup, setPickup] = useState("PRUEBA: Terminal local de salida");
-  const [pickupReference, setPickupReference] = useState("PRUEBA: puerta principal");
-  const [method, setMethod] = useState<PaymentMethod>("CASH");
+  const [reference, setReference] = useState("PRUEBA: puerta principal");
+  const [payment, setPayment] = useState<PaymentMethod>("CASH");
   const [quote, setQuote] = useState<{ totalBs: number; currency: string } | null>(null);
-  const [history, setHistory] = useState<Array<Record<string, any>>>([]);
+  const [bookings, setBookings] = useState<Array<Record<string, any>>>([]);
   const [attemptKey, setAttemptKey] = useState("");
-  const [tab, setTab] = useState<"Solicitar" | "Historial">("Solicitar");
+  const [tab, setTab] = useState<"request" | "history">("request");
   const route = useMemo(() => routeNames(direction), [direction]);
+  const passengerCount = Math.max(1, Math.min(7, Number(passengerText) || 1));
 
-  async function refreshHistory() { setHistory(await api.bookings()); }
+  async function loadBookings() { setBookings(await api.bookings()); }
+
   useEffect(() => {
+    let active = true;
     (async () => {
-      try { const config = await api.config(); setTestMode(config.testMode); if (!config.testMode) throw new Error("Entorno de pruebas no habilitado en el servidor; operaciones mÃ³viles bloqueadas."); const token = await secureTokenStore.gezßËh‘éì¶»§q«^tì(€€€€€…İ…¥Ğ…Á¤¹É•…Ñ•	½½­¥¹œ¡ì‘¥É•Ñ¥½¸°€¸¸¹É½ÕÑ”°Á¥­ÕÁA½¥¹ĞèÁ¥­ÕÀ°Á¥­ÕÁI•™•É•¹”èÁ¥­ÕÁI•™•É•¹”¹ÑÉ¥´ ¤ñğÕ¹‘•™¥¹•°Á…ÍÍ•¹•ÉÌè¸°­¥¹°Á…åµ•¹Ñ5•Ñ¡½èµ•Ñ¡½°ÅÉ	Ì°…Í¡	ÌèÑ½Ñ…°€´ÅÉ	Ìô°­•ä¤ì(€€€€€Í•ÑÑÑ•µÁÑ-•ä ˆˆ¤ì…İ…¥Ğ‰½½­¥¹ÑÑ•µÁÑMÑ½É”¹±•…È ¤ìÍ•ÑQ…ˆ ‰!¥ÍÑ½É¥…°ˆ¤ì…İ…¥ĞÉ•™É•Í¡!¥ÍÑ½Éä ¤ì(€€€ô…Ñ €¡”¤ìÍ•ÑÉÉ½È¡•áÁ±…¥¸¡”¤¤ìô(€€€™¥¹…±±äìÍ•Ñ]½É­¥¹œ¡™…±Í”¤ìô(€ô(€…Íå¹Œ™Õ¹Ñ¥½¸…¹•°¡¥èÍÑÉ¥¹œ¤ìÍ•Ñ]½É­¥¹œ¡ÑÉÕ”¤ìÍ•ÑÉÉ½È ˆˆ¤ìÑÉäì…İ…¥Ğ…Á¤¹…¹•±	½½­¥¹œ¡¥¤ì…İ…¥ĞÉ•™É•Í¡!¥ÍÑ½Éä ¤ìô…Ñ €¡”¤ìÍ•ÑÉÉ½È¡•áÁ±…¥¸¡”¤¤ìô™¥¹…±±äìÍ•Ñ]½É­¥¹œ¡™…±Í”¤ìôô(€…Íå¹Œ™Õ¹Ñ¥½¸±½½ÕĞ ¤ìÍ•Ñ]½É­¥¹œ¡ÑÉÕ”¤ìÑÉäì…İ…¥Ğ…Á¤¹±½½ÕĞ ¤ì…İ…¥Ğ‰½½­¥¹ÑÑ•µÁÑMÑ½É”¹±•…È ¤ìÍ•ÑÑÑ•µÁÑ-•ä ˆˆ¤ìÍ•ÑM•ÍÍ¥½¸¡¹Õ±°¤ìÍ•Ñ!¥ÍÑ½Éä¡mt¤ìô…Ñ €¡”¤ìÍ•ÑÉÉ½È¡•áÁ±…¥¸¡”¤¤ìô™¥¹…±±äìÍ•Ñ]½É­¥¹œ¡™…±Í”¤ìôô((€¥˜€¡±½…‘¥¹œ¤É•ÑÕÉ¸€ñA…”øñ	ÕÍä€¼øğ½A…”øì(€¥˜€ …Í•ÍÍ¥½¸ñğÍ•ÍÍ¥½¸¹É½±”€„ôô€‰AMM9Hˆ¤É•ÑÕÉ¸€ñA…”øñ!•…‘¥¹œÑ¥Ñ±”ô‰IÕÑ„€ÌÔƒ
-ÜA…Í…©•É½ÌˆÍÕ‰Ñ¥Ñ±”ô‰•Í¼‘”ÁÉÕ•‰„Á…É„Á…Í…©•É½Ìˆ€¼ùíÑ•ÍÑ5½‘”€ü€ñ9½Ñ¥”ù9Q=I9<AIU	Lƒ
-ÜÁ…½ÌÍ¥µÕ±…‘½Ì°Í¥¸ÑÉ…¹ÍÁ½ÉÑ”É•…°ğ½9½Ñ¥”ø€è€ñ9½Ñ¥”•ÉÉ½ÈùÁ±¥…§Í¸‰±½ÅÕ•…‘„èÍ½±¼½¹•Ñ„½¸Õ¸‰…­•¹Í•Á…É…‘¼ÅÕ”…¹Õ¹¥”µ½‘¼‘”ÁÉÕ•‰…Ì¸ğ½9½Ñ¥”ùôñ…Éøñ1…‰•°ù½ÉÉ•¼™¥Ñ¥¥¼€ ¹Ñ•ÍĞ¤ğ½1…‰•°øñ¥•±…ÕÑ½…Á¥Ñ…±¥é”ô‰¹½¹”ˆ…ÕÑ½½µÁ±•Ñ”ô‰•µ…¥°ˆ­•å‰½…É‘QåÁ”ô‰•µ…¥°µ…‘‘É•ÍÌˆÙ…±Õ”õí•µ…¥±ô½¹¡…¹•Q•áĞõíÍ•Ñµ…¥±ôÁ±…•¡½±‘•Èô‰Á…Í…©•É½•á…µÁ±”¹Ñ•ÍĞˆ€¼øñ1…‰•°ù½¹ÑÉ…Í—Å„ğ½1…‰•°øñ¥•±Í•ÕÉ•Q•áÑ¹ÑÉäÙ…±Õ”õíÁ…ÍÍİ½É‘ô½¹¡…¹•Q•áĞõíÍ•ÑA…ÍÍİ½É‘ôÁ±…•¡½±‘•Èô‰7µ¹¥µ¼€ÄĞ…É…Ñ•É•Ìˆ€¼ùí•ÉÉ½È€ü€ñ9½Ñ¥”•ÉÉ½Èùí•ÉÉ½Éôğ½9½Ñ¥”ø€è¹Õ±±ôñ	ÕÑÑ½¸Ñ¥Ñ±”õíİ½É­¥¹œ€ü€‰½¹•Ñ…¹‘¿Š˜ˆ€è¥ÍI•¥ÍÑ•È€ü€‰É•…ÈÕ•¹Ñ„™¥Ñ¥¥„”¥¹É•Í…Èˆ€è€‰%¹É•Í…È‰ô‘¥Í…‰±•õíİ½É­¥¹œñğ€…Ñ•ÍÑ5½‘”ñğ€…•µ…¥°ñğ€…Á…ÍÍİ½É‘ô½¹AÉ•ÍÌõí…ÕÑ¡•¹Ñ¥…Ñ•ô€¼øñ	ÕÑÑ½¸Ñ¥Ñ±”õí¥ÍI•¥ÍÑ•È€ü€‰e„Ñ•¹¼Õ•¹Ñ„ˆ€è€‰É•…ÈÕ•¹Ñ„™¥Ñ¥¥„‰ôÍ•½¹‘…Éä‘¥Í…‰±•õì…Ñ•ÍÑ5½‘•ô½¹AÉ•ÍÌõì ¤€ôøÍ•Ñ%ÍI•¥ÍÑ•È …¥ÍI•¥ÍÑ•È¥ô€¼øğ½…Éøğ½A…”øì((€É•ÑÕÉ¸€ñA…”øñMÉ½±±Y¥•Ü­•å‰½…É‘M¡½Õ±‘A•ÉÍ¥ÍÑQ…ÁÌô‰¡…¹‘±•ˆ½¹Ñ•¹Ñ½¹Ñ…¥¹•ÉMÑå±”õíì…Àè€ÄÈ°Á…‘‘¥¹	½ÑÑ½´è€ÌÀõôø(€€€€ñ!•…‘¥¹œÑ¥Ñ±”ô‰IÕÑ„€ÌÔƒ
-ÜA…Í…©•É½ÌˆÍÕ‰Ñ¥Ñ±”õí½¹•Ñ…‘¼ƒ
-Ü€‘í•µ…¥±õô€¼ø(€€€íÑ•ÍÑ5½‘”€ü€ñ…ÉøñQ•áĞÍÑå±”õíì½±½Èè½±½ÉÌ¹É•°™½¹Ñ]•¥¡Ğè€ˆäÀÀˆõôù9Q=I9<AIU	Lƒ
-ÜÁ…½ÌÍ¥µÕ±…‘½Ìğ½Q•áĞøñ9½Ñ¥”ù9¼Í”ÁÉ½•Í…¸Á…½ÌEHÉ•…±•Ì¹¤Í½±¥¥ÑÕ‘•ÌÉ•…±•Ì‘”ÑÉ…¹ÍÁ½ÉÑ”¸ğ½9½Ñ¥”øğ½…Éø€è¹Õ±±ô(€€€í•ÉÉ½È€ü€ñ9½Ñ¥”•ÉÉ½Èùí•ÉÉ½Éôğ½9½Ñ¥”ø€è¹Õ±±ô(€€€€ñY¥•ÜÍÑå±”õíì™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…Àè€àõôøñ	ÕÑÑ½¸Ñ¥Ñ±”ô‰M½±¥¥Ñ…ÈˆÍ•½¹‘…ÉäõíÑ…ˆ€„ôô€‰M½±¥¥Ñ…È‰ô½¹AÉ•ÍÌõì ¤€ôøÍ•ÑQ…ˆ ‰M½±¥¥Ñ…Èˆ¥ô€¼øñ	ÕÑÑ½¸Ñ¥Ñ±”ô‰!¥ÍÑ½É¥…°ˆÍ•½¹‘…ÉäõíÑ…ˆ€„ôô€‰!¥ÍÑ½É¥…°‰ô½¹AÉ•ÍÌõì ¤€ôøÍ•ÑQ…ˆ ‰!¥ÍÑ½É¥…°ˆ¥ô€¼øñ	ÕÑÑ½¸Ñ¥Ñ±”ô‰M…±¥ÈˆÍ•½¹‘…Éä½¹AÉ•ÍÌõí±½½ÕÑô€¼øğ½Y¥•Üø(€€€íÑ…ˆ€ôôô€‰M½±¥¥Ñ…Èˆ€ü€ğø(€€€€€€ñ…Éøñ1…‰•°ùM•¹Ñ¥‘¼ğ½1…‰•°ùí¡½¥•Ì¡l‰eU%	}Q=}Y%115=9QLˆ°€‰Y%115=9QM}Q=}eU%	‰t…Ì½¹ÍĞ°‘¥É•Ñ¥½¸°Í•Ñ¥É•Ñ¥½¸¥ôñ9½Ñ¥”ùíÉ½ÕÑ”¹½É¥¥¹ôƒŠHíÉ½ÕÑ”¹‘•ÍÑ¥¹…Ñ¥½¹ôğ½9½Ñ¥”ø(€€€€€€€€ñ1…‰•°ù5½‘…±¥‘…ğ½1…‰•°ùí¡½¥•Ì¡l‰=I%9Idˆ°€‰aAIML‰t…Ì½¹ÍĞ°­¥¹°€¡Ø¤€ôøìÍ•Ñ-¥¹¡Ø¤ì¥˜€¡Ø€ôôô€‰aAIMLˆ¤Í•ÑA…ÍÍ•¹•ÉÌ ˆÜˆ¤ìô¥õí­¥¹€ôôô€‰aAIMLˆ€ü€ñ9½Ñ¥”ù°‰…­•¹•á¥”É•Í•ÉÙ…È±…ÌÍ¥•Ñ”Á±…é…ÌÁ…É„Õ¸Ù¥…©”•áÁÉ•Í¼¸ğ½9½Ñ¥”ø€è¹Õ±±ôñ1…‰•°ùA…Í…©•É½Ì€¡·…á¥µ¼€Ü¤ğ½1…‰•°øñ¥•±­•å‰½…É‘QåÁ”ô‰¹Õµ‰•ÈµÁ…ˆÙ…±Õ”õíÁ…ÍÍ•¹•ÉÍô½¹¡…¹•Q•áĞõì¡Ø¤€ôøÍ•ÑA…ÍÍ•¹•ÉÌ¡Ø¹É•Á±…” ½q½œ°€ˆˆ¤¹Í±¥” À°€Ä¤¥ô€¼ø(€€€€€€€€ñ1…‰•°ùU‰¥…§Í¸€¼ÁÕ¹Ñ¼‘”É•½¥‘„ğ½1…‰•°øñ¥•±Ù…±Õ”õíÁ¥­ÕÁô½¹¡…¹•Q•áĞõíÍ•ÑA¥­ÕÁôÁ±…•¡½±‘•Èô‰AIU	è€¸¸¸ˆ€¼øñ1…‰•°ùI•™•É•¹¥„½Á¥½¹…°ğ½1…‰•°øñ¥•±Ù…±Õ”õíÁ¥­ÕÁI•™•É•¹•ô½¹¡…¹•Q•áĞõíÍ•ÑA¥­ÕÁI•™•É•¹•ôÁ±…•¡½±‘•Èô‰AIU	è€¸¸¸ˆ€¼ø(€€€€€€€€ñ1…‰•°ùAÉ•¥¼½Ñ¥é…‘¼ğ½1…‰•°øñQ•áĞÍÑå±”õíì½±½Èè½±½ÉÌ¹¥¹¬°™½¹ÑM¥é”è€ÈĞ°™½¹Ñ]•¥¡Ğè€ˆäÀÀˆõôùíÅÕ½Ñ”€ü	Ì€‘íÅÕ½Ñ”¹Ñ½Ñ…±	Íõ€€è€‰½¹ÍÕ±Ñ…¹‘¿Š˜‰ôğ½Q•áĞø(€€€€€€€€ñ1…‰•°ùA…¼Í¥µÕ±…‘¼ğ½1…‰•°ùí¡½¥•Ì¡l‰M ˆ°€‰EHˆ°€‰=5	%9‰t…Ì½¹ÍĞ°µ•Ñ¡½°Í•Ñ5•Ñ¡½¥õíµ•Ñ¡½€ôôô€‰=5	%9ˆ€ü€ñ9½Ñ¥”ùA…¼½µ‰¥¹…‘¼™¥Ñ¥¥¼è€ÔÀ”EHµ…¹Õ…°€¬•™•Ñ¥Ù¼¸°EHÉ•ÅÕ¥•É”Ù•É¥™¥…§Í¸…‘µ¥¹¥ÍÑÉ…Ñ¥Ù„¸ğ½9½Ñ¥”ø€è¹Õ±±ô(€€€€€€€€ñ	ÕÑÑ½¸Ñ¥Ñ±”õíİ½É­¥¹œ€ü€‰¹Ù¥…¹‘¿Š˜ˆ€è€‰M½±¥¥Ñ…ÈÙ¥…©”‘”ÁÉÕ•‰„‰ô‘¥Í…‰±•õíİ½É­¥¹œñğ€…Ñ•ÍÑ5½‘”ñğ€…ÅÕ½Ñ”ñğ€…Á¥­ÕÀ¹ÑÉ¥´ ¤ñğ€„½yAIU	è½¤¹Ñ•ÍĞ¡Á¥­ÕÀ¹ÑÉ¥´ ¤¥ô½¹AÉ•ÍÌõíÍÕ‰µ¥Ñ	½½­¥¹ô€¼ø(€€€€€€ğ½…Éø(€€€€ğ¼ø€è€ğø(€€€€€€ñ	ÕÑÑ½¸Ñ¥Ñ±”ô‰ÑÕ…±¥é…È¡¥ÍÑ½É¥…°ˆÍ•½¹‘…Éä½¹AÉ•ÍÌõì ¤€ôøÉ•™É•Í¡!¥ÍÑ½Éä ¤¹…Ñ  ¡”¤€ôøÍ•ÑÉÉ½È¡•áÁ±…¥¸¡”¤¤¥ô€¼ø(€€€€€í¡¥ÍÑ½Éä¹±•¹Ñ €ü¡¥ÍÑ½Éä¹µ…À ¡ˆ¤€ôø€ñ…É­•äõíˆ¹¥‘ôøñQ•áĞÍÑå±”õíì½±½Èè½±½ÉÌ¹¥¹¬°™½¹Ñ]•¥¡Ğè€ˆäÀÀˆõôùíˆ¹½É¥¥¹ôƒŠHíˆ¹‘•ÍÑ¥¹…Ñ¥½¹ôƒ
-Üíˆ¹­¥¹‘ôğ½Q•áĞøñ9½Ñ¥”ùíˆ¹Á…ÍÍ•¹•ÉÍôÁ…Í…©•É¼¡Ì¤ƒ
-Ü	Ìíˆ¹Ñ½Ñ…±	Íôƒ
-Üíˆ¹ÍÑ…ÑÕÍôğ½9½Ñ¥”øñ9½Ñ¥”ùA…¼Í¥µÕ±…‘¼èíˆ¹Á…åµ•¹Ğü¹ÍÑ…ÑÕÌ€üü€‰A9%9‰ôƒ
-Üíˆ¹Á…åµ•¹Ñ5•Ñ¡½‘ôğ½9½Ñ¥”øñ9½Ñ¥”ùI•½¥‘„èíˆ¹Á¥­ÕÁA½¥¹Ñôğ½9½Ñ¥”ùíˆ¹ÍÑ…ÑÕÌ€ôôô€‰A9%9ˆ€ü€ñ	ÕÑÑ½¸Ñ¥Ñ±”ô‰…¹•±…ÈÉ•Í•ÉÙ„Á•¹‘¥•¹Ñ”ˆÍ•½¹‘…Éä‘¥Í…‰±•õíİ½É­¥¹ô½¹AÉ•ÍÌõì ¤€ôø…¹•°¡ˆ¹¥¥ô€¼ø€è¹Õ±±ôğ½…Éø¤€è€ñ…Éøñ9½Ñ¥”ù9¼¡…äÉ•Í•ÉÙ…ÌÑ½‘…Ûµ„¸ğ½9½Ñ¥”øğ½…Éùô(€€€€ğ¼ùô(€€ğ½MÉ½±±Y¥•Üøğ½A…”øì)ô
+      try {
+        const config = await api.config();
+        if (!active) return;
+        setTestMode(config.testMode);
+        if (!config.testMode) throw new Error("El backend no anuncia modo de pruebas; acceso bloqueado.");
+        const [token, savedAttempt] = await Promise.all([secureTokenStore.get(), bookingAttemptStore.get()]);
+        if (savedAttempt) setAttemptKey(savedAttempt);
+        if (token) {
+          const me = await api.me();
+          if (me.role === "PASSENGER") setSession(me);
+          else { await api.logout(); throw new Error("Esta aplicacion requiere una cuenta de pasajero."); }
+        }
+      } catch (cause) {
+        if (cause instanceof ApiError && cause.status === 401) await secureTokenStore.clear();
+        setError(message(cause));
+      } finally { if (active) setLoading(false); }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+    setQuote(null);
+    api.quote(passengerCount, kind).then((value) => { if (active) setQuote(value); })
+      .catch((cause) => { if (active) setError(message(cause)); });
+    return () => { active = false; };
+  }, [session, passengerCount, kind]);
+
+  useEffect(() => {
+    if (session && tab === "history") loadBookings().catch((cause) => setError(message(cause)));
+  }, [session, tab]);
+
+  async function authenticate() {
+    setWorking(true); setError("");
+    try {
+      if (!testMode) throw new Error("Solo se permite conectar a un backend de pruebas.");
+      if (registering) await api.register(email.trim(), password);
+      const me = await api.login(email.trim(), password);
+      if (me.role !== "PASSENGER") { await api.logout(); throw new Error("La cuenta no tiene permiso de pasajero."); }
+      setSession(me);
+    } catch (cause) { setError(message(cause)); }
+    finally { setWorking(false); }
+  }
+
+  async function createBooking() {
+    setWorking(true); setError("");
+    const key = attemptKey || `rn-${Date.now()}-${Math.random().toString(36).slice(2, 18)}`;
+    try {
+      if (!quote) throw new Error("Espera a que el servidor confirme la tarifa.");
+      if (!pickup.trim().startsWith("PRUEBA:")) throw new Error("En el entorno de prueba, el punto debe comenzar por PRUEBA:.");
+      await bookingAttemptStore.set(key);
+      setAttemptKey(key);
+      const total = quote.totalBs;
+      const qrBs = payment === "QR" ? total : payment === "COMBINED" ? Math.floor(total / 2) : 0;
+      await api.createBooking({ direction, ...route, pickupPoint: pickup.trim(), pickupReference: reference.trim() || undefined,
+        passengers: passengerCount, kind, paymentMethod: payment, qrBs, cashBs: total - qrBs }, key);
+      await bookingAttemptStore.clear();
+      setAttemptKey("");
+      setTab("history");
+      await loadBookings();
+    } catch (cause) { setError(message(cause)); }
+    finally { setWorking(false); }
+  }
+
+  async function cancelBooking(id: string) {
+    setWorking(true); setError("");
+    try { await api.cancelBooking(id); await loadBookings(); }
+    catch (cause) { setError(message(cause)); }
+    finally { setWorking(false); }
+  }
+
+  async function logout() {
+    setWorking(true); setError("");
+    try { await api.logout(); setSession(null); setBookings([]); await bookingAttemptStore.clear(); setAttemptKey(""); }
+    catch (cause) { setError(message(cause)); }
+    finally { setWorking(false); }
+  }
+
+  if (loading) return <Page><Busy /></Page>;
+  if (!session) return <Page><Heading title="Ruta 35 - Pasajeros" subtitle="Acceso para pasajeros de prueba" />
+    <Card><Notice>ENTORNO DE PRUEBAS. No se procesan pagos ni viajes reales.</Notice>
+      {!testMode ? <Notice error>Aplicacion bloqueada: el backend no esta en modo de pruebas.</Notice> : null}
+      <Label>Correo ficticio terminado en .test</Label><Field value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" placeholder="pasajero@example.test" />
+      <Label>Contrasena</Label><Field value={password} onChangeText={setPassword} secureTextEntry placeholder="Minimo 14 caracteres" />
+      {error ? <Notice error>{error}</Notice> : null}
+      <Button title={working ? "Conectando..." : registering ? "Crear cuenta ficticia e ingresar" : "Ingresar"}
+        disabled={working || !testMode || !email || !password} onPress={authenticate} />
+      <Button title={registering ? "Ya tengo cuenta" : "Crear cuenta ficticia"} secondary disabled={!testMode}
+        onPress={() => setRegistering(!registering)} />
+    </Card></Page>;
+
+  return <Page><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 12, paddingBottom: 32 }}>
+    <Heading title="Ruta 35 - Pasajeros" subtitle={`Sesion de pasajero: ${email}`} />
+    <Card><Text style={{ color: colors.red, fontWeight: "900" }}>ENTORNO DE PRUEBAS</Text><Notice>Pagos simulados; no se solicita transporte real.</Notice></Card>
+    {error ? <Notice error>{error}</Notice> : null}
+    <View style={{ flexDirection: "row", gap: 8 }}>
+      <Button title="Solicitar" secondary={tab !== "request"} onPress={() => setTab("request")} />
+      <Button title="Historial" secondary={tab !== "history"} onPress={() => setTab("history")} />
+      <Button title="Salir" secondary onPress={logout} />
+    </View>
+    {tab === "request" ? <Card>
+      <Label>Sentido</Label><Options values={["YACUIBA_TO_VILLAMONTES", "VILLAMONTES_TO_YACUIBA"] as const} selected={direction} onSelect={setDirection} />
+      <Notice>{route.origin} a {route.destination}</Notice>
+      <Label>Tipo de viaje</Label><Options values={["ORDINARY", "EXPRESS"] as const} selected={kind} onSelect={(value) => { setKind(value); if (value === "EXPRESS") setPassengerText("7"); }} />
+      {kind === "EXPRESS" ? <Notice>El expreso requiere las siete plazas, segun las reglas del backend.</Notice> : null}
+      <Label>Pasajeros (maximo 7)</Label><Field keyboardType="number-pad" value={passengerText} onChangeText={(value) => setPassengerText(value.replace(/\D/g, "").slice(0, 1))} />
+      <Label>Punto de recogida (prueba)</Label><Field value={pickup} onChangeText={setPickup} placeholder="PRUEBA: lugar" />
+      <Label>Referencia</Label><Field value={reference} onChangeText={setReference} placeholder="PRUEBA: referencia opcional" />
+      <Label>Tarifa consultada al servidor</Label><Text style={{ color: colors.ink, fontSize: 24, fontWeight: "900" }}>{quote ? `${quote.currency} ${quote.totalBs}` : "Consultando..."}</Text>
+      <Label>Pago simulado</Label><Options values={["CASH", "QR", "COMBINED"] as const} selected={payment} onSelect={setPayment} />
+      <Notice>QR manual y combinado son registros de prueba. No se genera QR bancario ni transferencia.</Notice>
+      <Button title={working ? "Enviando..." : "Solicitar reserva"} disabled={working || !quote || !testMode} onPress={createBooking} />
+      {attemptKey ? <Notice>Se conserva la clave de intento para que reintentar no duplique la reserva.</Notice> : null}
+    </Card> : <>
+      <Heading title="Historial de reservas" />
+      <Button title={working ? "Actualizando..." : "Actualizar historial"} secondary disabled={working} onPress={() => { setWorking(true); loadBookings().catch((cause) => setError(message(cause))).finally(() => setWorking(false)); }} />
+      {bookings.length ? bookings.map((booking) => <Card key={booking.id}>
+        <Text style={{ color: colors.ink, fontWeight: "900" }}>{booking.origin} a {booking.destination} - {names[booking.kind] ?? booking.kind}</Text>
+        <Notice>Estado: {booking.status} | Pasajeros: {booking.passengers} | Bs {booking.totalBs}</Notice>
+        <Notice>Recogida: {booking.pickupPoint}{booking.pickupReference ? ` (${booking.pickupReference})` : ""}</Notice>
+        <Notice>Pago: {names[booking.paymentMethod] ?? booking.paymentMethod} - {booking.payment?.status ?? "pendiente"}</Notice>
+        {booking.status === "PENDING" ? <Button title="Cancelar reserva pendiente" secondary disabled={working} onPress={() => cancelBooking(booking.id)} /> : null}
+      </Card>) : <Card><Notice>No hay reservas en el historial.</Notice></Card>}
+    </>}
+  </ScrollView></Page>;
+}
