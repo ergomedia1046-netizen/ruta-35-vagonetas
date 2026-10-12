@@ -13,6 +13,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "start": "node dist/src/server.js",
+    "simulate:day": "node dist/src/scripts/simulate-day.js",
     "bootstrap:admin": "node dist/src/scripts/bootstrap-admin.js"
   },
   "dependencies": {
@@ -32,3 +33,4 @@
     "vitest": "5.0.3"
   }
 }
+

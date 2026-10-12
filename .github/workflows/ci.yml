@@ -25,6 +25,7 @@ jobs:
       DATABASE_URL: postgresql://ruta35:ci-password@localhost:5432/ruta35
       SESSION_SECRET: ci-only-secret-with-at-least-32-characters
       NODE_ENV: test
+      RUTA35_TEST_MODE: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -37,4 +38,18 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Run reproducible full-day simulation
+        run: |
+          npm run simulate:day
+          cp docs/SIMULACION_DIA_COMPLETO.md /tmp/SIMULACION_DIA_COMPLETO.first.md
+          npm run simulate:day
+          diff -u /tmp/SIMULACION_DIA_COMPLETO.first.md docs/SIMULACION_DIA_COMPLETO.md
+      - name: Upload simulation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulacion-dia-completo
+          path: docs/SIMULACION_DIA_COMPLETO.md
+          if-no-files-found: warn
       - run: npm audit
+
