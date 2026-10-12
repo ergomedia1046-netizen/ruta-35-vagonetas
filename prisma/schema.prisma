@@ -25,6 +25,7 @@ model User {
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   bookings     Booking[] @relation("PassengerBookings")
+  sessions     Session[]
   shifts       DriverShift[]
   auditEvents  AuditEvent[]
 }
@@ -124,4 +125,15 @@ model AuditEvent {
   createdAt  DateTime @default(now())
   actor      User? @relation(fields:[actorId], references:[id])
   @@index([entityType, entityId, createdAt])
+}
+
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([expiresAt])
 }
