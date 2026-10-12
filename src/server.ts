@@ -76,13 +76,13 @@ app.get("/api/v1/admin/audit", { preHandler: requireRole("ADMIN") }, async () =>
 
 
 app.post("/api/v1/admin/users", { preHandler: requireRole("ADMIN") }, async (request, reply) => {
-  const body = z.object({ email: z.string().email().max(254), password: z.string().min(14).max(200), role: z.enum(["PASSENGER", "DRIVER", "ADMIN"]) }).safeParse(request.body);
+  const body = z.object({ email: z.string().email().max(254).refine(value => process.env.RUTA35_TEST_MODE !== "true" || value.trim().toLowerCase().endsWith(".test")), password: z.string().min(14).max(200), role: z.enum(["PASSENGER", "DRIVER", "ADMIN"]) }).safeParse(request.body);
   if (!body.success) return reply.code(400).send({ error: "invalid_request" });
   try { return reply.code(201).send(await createUser(prisma, request.authUser!.id, body.data)); }
   catch { return reply.code(409).send({ error: "user_could_not_be_created" }); }
 });
 app.post("/api/v1/admin/vehicles", { preHandler: requireRole("ADMIN") }, async (request, reply) => {
-  const body = z.object({ plate: z.string().trim().min(4).max(16).regex(/^[A-Za-z0-9 -]+$/) }).safeParse(request.body);
+  const body = z.object({ plate: z.string().trim().min(4).max(16).regex(/^[A-Za-z0-9 -]+$/).refine(value => process.env.RUTA35_TEST_MODE !== "true" || /^TEST-[A-Za-z0-9-]+$/i.test(value)) }).safeParse(request.body);
   if (!body.success) return reply.code(400).send({ error: "invalid_request" });
   try { return reply.code(201).send(await createVehicle(prisma, request.authUser!.id, body.data.plate)); }
   catch { return reply.code(409).send({ error: "vehicle_could_not_be_created" }); }
@@ -163,7 +163,7 @@ app.post("/api/v1/bookings", { preHandler: requireRole("PASSENGER") }, async (re
   const body = z.object({
     direction: z.enum(["YACUIBA_TO_VILLAMONTES", "VILLAMONTES_TO_YACUIBA"]),
     origin: z.string().min(3).max(80), destination: z.string().min(3).max(80),
-    pickupPoint: z.string().min(2).max(200), pickupReference: z.string().max(300).optional(),
+    pickupPoint: z.string().min(2).max(200).refine(value => process.env.RUTA35_TEST_MODE !== "true" || /^PRUEBA:/i.test(value.trim())), pickupReference: z.string().max(300).refine(value => process.env.RUTA35_TEST_MODE !== "true" || /^PRUEBA:/i.test(value.trim())).optional(),
     passengers: z.number().int().min(1).max(7),
     kind: z.enum(["ORDINARY", "EXPRESS"]).default("ORDINARY"),
     paymentMethod: z.enum(["CASH", "QR", "COMBINED"]),
