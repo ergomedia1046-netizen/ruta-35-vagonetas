@@ -1,11 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { prisma } from "../src/db.js";
 import { assignBooking } from "../src/services/dispatch.js";
 import { createBooking } from "../src/services/bookings.js";
-import { reportCombinedIncident, reviewIncident, restrictCombinedPayment, correctIncident } from "../src/services/incidents.js";
+import { correctIncident, reportCombinedIncident, restrictCombinedPayment, reviewIncident } from "../src/services/incidents.js";
 
 const suite = describe.skipIf(!process.env.DATABASE_URL);
-suite("PostgreSQL dispatch concurrency", () => {
+suite("PostgreSQL dispatch and incident integration", () => {
   let userId = "";
   let vehicleId = "";
   let bookingIds: string[] = [];
@@ -22,6 +23,7 @@ suite("PostgreSQL dispatch concurrency", () => {
       ] } });
     }
     if (bookingIds.length) {
+      await prisma.auditEvent.deleteMany({ where: { entityId: { in: bookingIds } } });
       await prisma.assignment.deleteMany({ where: { bookingId: { in: bookingIds } } });
       await prisma.paymentPart.deleteMany({ where: { payment: { bookingId: { in: bookingIds } } } });
       await prisma.payment.deleteMany({ where: { bookingId: { in: bookingIds } } });
@@ -38,3 +40,113 @@ suite("PostgreSQL dispatch concurrency", () => {
     userId = "";
     vehicleId = "";
   });
+
+  async function setup() {
+    const user = await prisma.user.create({ data: {
+      email: `admin-${randomUUID()}@example.test`, passwordHash: "test", role: "ADMIN"
+    }});
+    userId = user.id;
+    userIds.push(user.id);
+    const vehicle = await prisma.vehicle.create({
+      data: { plate: `T-${randomUUID().slice(0, 8)}`, capacity: 7 }
+    });
+    vehicleId = vehicle.id;
+  }
+
+  async function seedBooking(passengers: number, suffix: string, confirmedAt = new Date()) {
+    const booking = await prisma.booking.create({ data: {
+      direction: "YACUIBA_TO_VILLAMONTES", origin: "Yacuiba", destination: "Villamontes",
+      pickupPoint: "Terminal", passengers, kind: "ORDINARY", totalBs: passengers * 35,
+      status: "CONFIRMED", paymentMethod: "CASH", confirmedAt,
+      idempotencyKey: `integration-${suffix}-${randomUUID()}`
+    }});
+    bookingIds.push(booking.id);
+    return booking;
+  }
+
+  it("allows five plus two passengers but refuses an extra seat", async () => {
+    await setup();
+    const first = await seedBooking(5, "five");
+    const second = await seedBooking(2, "two", new Date(Date.now() + 1));
+    const third = await seedBooking(1, "one", new Date(Date.now() + 2));
+    await assignBooking(prisma, first.id, vehicleId, userId);
+    await assignBooking(prisma, second.id, vehicleId, userId);
+    await expect(assignBooking(prisma, third.id, vehicleId, userId)).rejects.toThrow();
+  });
+
+  it("allows only one concurrent operation to claim a request", async () => {
+    await setup();
+    const booking = await seedBooking(2, "claim");
+    const results = await Promise.allSettled([
+      assignBooking(prisma, booking.id, vehicleId, userId),
+      assignBooking(prisma, booking.id, vehicleId, userId)
+    ]);
+    expect(results.filter((item) => item.status === "fulfilled")).toHaveLength(1);
+    expect(await prisma.assignment.count({ where: { bookingId: booking.id } })).toBe(1);
+  });
+
+  it("does not overbook when two four-seat requests race", async () => {
+    await setup();
+    const first = await seedBooking(4, "first", new Date(Date.now() - 1_000));
+    const second = await seedBooking(4, "second", new Date());
+    const results = await Promise.allSettled([
+      assignBooking(prisma, first.id, vehicleId, userId),
+      assignBooking(prisma, second.id, vehicleId, userId)
+    ]);
+    expect(results.filter((item) => item.status === "fulfilled")).toHaveLength(1);
+    const assigned = await prisma.assignment.findMany({ where: { vehicleId }, include: { booking: true } });
+    expect(assigned.reduce((sum, item) => sum + item.booking.passengers, 0)).toBeLessThanOrEqual(7);
+    expect(assigned[0]?.booking.id).toBe(first.id);
+  });
+
+  it("restricts only combined payment after review and reverses it on correction", async () => {
+    await setup();
+    const passenger = await prisma.user.create({ data: {
+      email: `passenger-${randomUUID()}@example.test`, passwordHash: "test", role: "PASSENGER"
+    }});
+    const driver = await prisma.user.create({ data: {
+      email: `driver-${randomUUID()}@example.test`, passwordHash: "test", role: "DRIVER"
+    }});
+    userIds.push(passenger.id, driver.id);
+    await prisma.driverShift.create({ data: { userId: driver.id, vehicleId, startsAt: new Date() } });
+    const booking = await prisma.booking.create({ data: {
+      passengerId: passenger.id, direction: "YACUIBA_TO_VILLAMONTES", origin: "Yacuiba",
+      destination: "Villamontes", pickupPoint: "Terminal", passengers: 1, kind: "ORDINARY",
+      totalBs: 35, status: "ASSIGNED", paymentMethod: "COMBINED", confirmedAt: new Date(),
+      idempotencyKey: `incident-${randomUUID()}`
+    }});
+    bookingIds.push(booking.id);
+    await prisma.assignment.create({ data: { bookingId: booking.id, vehicleId } });
+    await prisma.payment.create({ data: {
+      bookingId: booking.id, method: "COMBINED", totalBs: 35,
+      parts: { create: [{ kind: "QR", amountBs: 30 }, { kind: "CASH", amountBs: 5 }] }
+    }});
+    const incident = await reportCombinedIncident(prisma, booking.id, driver.id);
+    expect(incident.amountBs).toBe(35);
+    await reviewIncident(prisma, incident.id, userId, "SUBSTANTIATED", "Reviewed against the payment ledger");
+    await restrictCombinedPayment(prisma, incident.id, userId, "Approved after review");
+
+    const base = {
+      passengerId: passenger.id, direction: "YACUIBA_TO_VILLAMONTES" as const,
+      origin: "Yacuiba", destination: "Villamontes", pickupPoint: "Terminal",
+      passengers: 1, kind: "ORDINARY" as const
+    };
+    await expect(createBooking(prisma, {
+      ...base, paymentMethod: "COMBINED", qrBs: 30, cashBs: 5, idempotencyKey: `blocked-${randomUUID()}`
+    })).rejects.toThrow();
+    const cash = await createBooking(prisma, {
+      ...base, paymentMethod: "CASH", qrBs: 0, cashBs: 35, idempotencyKey: `cash-${randomUUID()}`
+    });
+    bookingIds.push(cash.id);
+    const qr = await createBooking(prisma, {
+      ...base, paymentMethod: "QR", qrBs: 35, cashBs: 0, idempotencyKey: `qr-${randomUUID()}`
+    });
+    bookingIds.push(qr.id);
+
+    await correctIncident(prisma, incident.id, userId, "Reversed after administrative re-check");
+    const combined = await createBooking(prisma, {
+      ...base, paymentMethod: "COMBINED", qrBs: 30, cashBs: 5, idempotencyKey: `restored-${randomUUID()}`
+    });
+    bookingIds.push(combined.id);
+  });
+});
