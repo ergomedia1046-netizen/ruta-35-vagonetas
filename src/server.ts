@@ -18,6 +18,21 @@ await app.register(fastifyStatic, { root: join(process.cwd(), "public"), prefix:
 await app.register(authPlugin);
 app.get("/health", async () => ({ status: "ok", service: "ruta-35-api" }));
 
+app.get("/api/v1/admin/payments/pending-qr", { preHandler: requireRole("ADMIN") }, async () => {
+  return prisma.paymentPart.findMany({
+    where: { kind: "QR", status: "PENDING" },
+    include: { payment: { include: { booking: { select: { id: true, passengers: true, direction: true, totalBs: true, status: true } } } } },
+    orderBy: { id: "asc" }, take: 100
+  });
+});
+app.get("/api/v1/admin/audit", { preHandler: requireRole("ADMIN") }, async () => {
+  return prisma.auditEvent.findMany({
+    select: { id: true, actorId: true, action: true, entityType: true, entityId: true, details: true, createdAt: true },
+    orderBy: { createdAt: "desc" }, take: 100
+  });
+});
+
+
 app.post("/api/v1/admin/users", { preHandler: requireRole("ADMIN") }, async (request, reply) => {
   const body = z.object({ email: z.string().email().max(254), password: z.string().min(14).max(200), role: z.enum(["PASSENGER", "DRIVER", "ADMIN"]) }).safeParse(request.body);
   if (!body.success) return reply.code(400).send({ error: "invalid_request" });
