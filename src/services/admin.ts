@@ -44,3 +44,22 @@ export async function queueVehicle(db: PrismaClient, actorId: string, vehicleId:
     return entry;
   });
 }
+
+export async function createDriverShift(db: PrismaClient, actorId: string, userId: string, vehicleId: string) {
+  return db.$transaction(async (tx) => {
+    const driver = await tx.user.findUnique({ where: { id: userId } });
+    const vehicle = await tx.vehicle.findUnique({ where: { id: vehicleId } });
+    if (!driver || driver.role !== "DRIVER" || !driver.active || !vehicle || vehicle.status === "INACTIVE")
+      throw new Error("driver or vehicle unavailable");
+    const active = await tx.driverShift.findFirst({
+      where: { endsAt: null, OR: [{ userId }, { vehicleId }] }
+    });
+    if (active) throw new Error("driver or vehicle already has an active shift");
+    const shift = await tx.driverShift.create({ data: { userId, vehicleId, startsAt: new Date() } });
+    await tx.auditEvent.create({ data: {
+      actorId, action: "DRIVER_SHIFT_STARTED", entityType: "DriverShift", entityId: shift.id,
+      details: { userId, vehicleId }
+    }});
+    return shift;
+  });
+}
