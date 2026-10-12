@@ -22,6 +22,7 @@ export async function createBooking(db: PrismaClient, args: {
         if (existing.passengerId !== args.passengerId) throw new Error("idempotency key already used");
         return existing;
       }
+      await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${args.passengerId} FOR UPDATE`;
       const passenger = await tx.user.findUnique({ where: { id: args.passengerId }, select: { active: true, combinedPaymentRestricted: true } });
       if (!passenger?.active) throw new Error("passenger account is unavailable");
       if (args.paymentMethod === "COMBINED" && passenger.combinedPaymentRestricted)
