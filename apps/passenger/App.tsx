@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
-import { ApiError, routeNames, type BookingKind, type Direction, type PaymentMethod } from "@ruta35/mobile-core/src/api";
-import { api, bookingAttemptStore, secureTokenStore } from "@ruta35/mobile-core/src/native";
-import { Button, Busy, Card, Field, Heading, Label, Notice, Page, colors } from "@ruta35/mobile-core/src/ui";
+import { ApiError, routeNames, type BookingKind, type Direction, type PaymentMethod } from "../../packages/mobile-core/src/api";
+import { api, bookingAttemptStore, secureTokenStore } from "../../packages/mobile-core/src/native";
+import { Button, Busy, Card, Field, Heading, Label, Notice, Page, colors } from "../../packages/mobile-core/src/ui";
 
 const explain = (e: unknown) => e instanceof ApiError ? e.code === "connection_unavailable" || e.code === "connection_timeout" ? "No hay conexión con Ruta 35. Revisa internet y vuelve a intentar." : `${e.code} (${e.status})` : e instanceof Error ? e.message : "Ocurrió un error inesperado.";
 const pretty: Record<string, string> = { YACUIBA_TO_VILLAMONTES: "Yacuiba → Villamontes", VILLAMONTES_TO_YACUIBA: "Villamontes → Yacuiba", ORDINARY: "Ordinario", EXPRESS: "Expreso", CASH: "Efectivo", QR: "QR manual", COMBINED: "Combinado" };

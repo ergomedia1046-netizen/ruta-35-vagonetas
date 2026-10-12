@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
-import { ApiError } from "@ruta35/mobile-core/src/api";
-import { api, secureTokenStore } from "@ruta35/mobile-core/src/native";
-import { Button, Busy, Card, Field, Heading, Label, Notice, Page, colors } from "@ruta35/mobile-core/src/ui";
+import { ApiError } from "../../packages/mobile-core/src/api";
+import { api, secureTokenStore } from "../../packages/mobile-core/src/native";
+import { Button, Busy, Card, Field, Heading, Label, Notice, Page, colors } from "../../packages/mobile-core/src/ui";
 
 const explain = (e: unknown) => e instanceof ApiError ? e.status === 0 ? "Sin conexión con el servidor. Comprueba internet y actualiza." : `${e.code} (${e.status})` : e instanceof Error ? e.message : "Ocurrió un error inesperado.";
 export default function App() {
