@@ -15,7 +15,10 @@ import argon2 from "argon2";
 import { correctIncident, listIncidents, reportCombinedIncident, restrictCombinedPayment, reviewIncident } from "./services/incidents.js";
 
 if (!process.env.SESSION_SECRET || Buffer.byteLength(process.env.SESSION_SECRET) < 32) {
-  throw new Error("SESSION_SECRET must contain at least 32 bytes");\n}\n\nconst app = Fastify({ logger: { redact: ["req.headers.authorization", "req.headers.cookie"] } });
+  throw new Error("SESSION_SECRET must contain at least 32 bytes");
+}
+
+const app = Fastify({ logger: { redact: ["req.headers.authorization", "req.headers.cookie"] } });
 await app.register(fastifyStatic, { root: join(process.cwd(), "public"), prefix: "/" });
 await app.register(authPlugin);
 app.get("/health", async () => ({ status: "ok", service: "ruta-35-api" }));
