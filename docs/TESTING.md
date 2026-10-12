@@ -11,8 +11,8 @@ Con PostgreSQL configurado: npm ci, npm run db:generate, npm run db:migrate, npm
 
 ## Prueba temporal en Render
 
-Consulta [docs/DEPLOYMENT.md](DEPLOYMENT.md) para crear la instancia gratuita y cuentas ficticias. El registro web solo acepta direcciones terminadas en `.test` y siempre asigna rol de pasajero; el administrador crea los perfiles de conductor y administrador. Usa placas `TEST-*`, puntos de recogida ficticios y no registres nombres, teléfonos ni correos reales. Todos los estados de pago son simulados.
+Consulta [docs/DEPLOYMENT.md](DEPLOYMENT.md) para crear la instancia gratuita y cuentas ficticias. El registro web solo acepta direcciones terminadas en `.test` y siempre asigna rol de pasajero; el administrador crea los perfiles de conductor y administrador. Usa solo correos `.test`, placas `TEST-*` y puntos/referencias inventados con prefijo `PRUEBA:`. La API rechaza cuentas, placas y puntos que no cumplan estos formatos durante el modo de prueba. No registres nombres, teléfonos ni correos reales. Todos los estados de pago son simulados.
 
 ## Pendiente
 
-Faltan pruebas de integración de login/roles y propiedad de reservas, rate limit, efectivo/QR dentro de API, cola bajo concurrencia, revisión de incidentes simultánea y navegación completa. No hay pruebas E2E del navegador. No afirmar que está cubierta producción hasta completar los casos y recibir un CI verde tras el último cambio.
+La integración de autenticación comprueba registro de pasajero ficticio, rechazo fuera del modo de prueba, login y atributos Secure/HttpOnly/SameSite de la cookie. Faltan pruebas de permisos exhaustivas, propiedad de reservas, rate limit, pagos dentro de API, cola e incidencias bajo concurrencia y navegación completa. No hay pruebas E2E del navegador. No afirmar que está cubierta producción hasta completar los casos y recibir un CI verde tras el último cambio.
