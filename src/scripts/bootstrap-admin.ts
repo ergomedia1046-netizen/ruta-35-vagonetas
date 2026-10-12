@@ -6,7 +6,7 @@ try {
     console.log("Admin bootstrap skipped; no bootstrap credentials are configured.");
   } else {
     const input = z.object({
-      email: z.string().email().max(254),
+      email: z.string().email().max(254).refine(value => process.env.RUTA35_TEST_MODE !== "true" || value.endsWith(".test")),
       password: z.string().min(14).max(200)
     }).safeParse({ email, password });
     if (!input.success) throw new Error("Set a valid RUTA35_BOOTSTRAP_EMAIL and a RUTA35_BOOTSTRAP_PASSWORD of at least 14 characters.");
