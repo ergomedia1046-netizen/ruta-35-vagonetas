@@ -48,10 +48,12 @@ export function validatePaymentParts(method: PaymentMethod, totalBs: number, qrB
 
 export type PartStatus = "PENDING" | "RECEIVED" | "VERIFIED" | "REJECTED";
 export function paymentStatus(method: PaymentMethod, qr: PartStatus, cash: PartStatus): "PENDING" | "PARTIAL" | "PAID" {
-  const qrPaid = method === "CASH" || qr === "VERIFIED";
-  const cashPaid = method === "QR" || cash === "RECEIVED";
+  if (method === "QR") return qr === "VERIFIED" ? "PAID" : "PENDING";
+  if (method === "CASH") return cash === "RECEIVED" ? "PAID" : "PENDING";
+  const qrPaid = qr === "VERIFIED";
+  const cashPaid = cash === "RECEIVED";
   if (qrPaid && cashPaid) return "PAID";
-  if ((qrPaid && !cashPaid) || (!qrPaid && cashPaid)) return "PARTIAL";
+  if (qrPaid || cashPaid) return "PARTIAL";
   return "PENDING";
 }
 
