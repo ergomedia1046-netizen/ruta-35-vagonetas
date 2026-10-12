@@ -4,10 +4,32 @@ import { quoteFare } from "./domain/booking.js";
 import { authPlugin, requireRole } from "./plugins/auth.js";
 import { prisma } from "./db.js";
 import { cancelPendingBooking, createBooking, listPassengerBookings } from "./services/bookings.js";
+import { confirmBooking } from "./services/booking-admin.js";
+import { assignBooking } from "./services/dispatch.js";
 
 const app = Fastify({ logger: { redact: ["req.headers.authorization", "req.headers.cookie"] } });
 await app.register(authPlugin);
 app.get("/health", async () => ({ status: "ok", service: "ruta-35-api" }));
+
+app.post("/api/v1/admin/bookings/:id/confirm", { preHandler: requireRole("ADMIN") }, async (request, reply) => {
+  const params = z.object({ id: z.string().min(1) }).safeParse(request.params);
+  if (!params.success) return reply.code(400).send({ error: "invalid_request" });
+  try {
+    return await confirmBooking(prisma, params.data.id, request.authUser!.id);
+  } catch {
+    return reply.code(409).send({ error: "booking_not_pending" });
+  }
+});
+app.post("/api/v1/driver/assignments", { preHandler: requireRole("DRIVER", "ADMIN") }, async (request, reply) => {
+  const body = z.object({ bookingId: z.string().min(1), vehicleId: z.string().min(1) }).safeParse(request.body);
+  if (!body.success) return reply.code(400).send({ error: "invalid_request" });
+  try {
+    return await assignBooking(prisma, body.data.bookingId, body.data.vehicleId, request.authUser!.id);
+  } catch {
+    return reply.code(409).send({ error: "assignment_not_available" });
+  }
+});
+
 
 app.post("/api/v1/bookings", { preHandler: requireRole("PASSENGER") }, async (request, reply) => {
   const body = z.object({
