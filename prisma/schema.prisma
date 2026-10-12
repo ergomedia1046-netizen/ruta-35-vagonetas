@@ -64,6 +64,17 @@ enum VehicleStatus {
   INACTIVE
 }
 
+enum IncidentStatus {
+  OPEN
+  REVIEWED
+  CORRECTED
+}
+
+enum IncidentDecision {
+  SUBSTANTIATED
+  NOT_SUBSTANTIATED
+}
+
 model User {
   id           String        @id @default(cuid())
   email        String        @unique
@@ -74,7 +85,13 @@ model User {
   bookings     Booking[]     @relation("PassengerBookings")
   shifts       DriverShift[]
   auditEvents  AuditEvent[]
-  sessions     Session[]\n  combinedPaymentRestricted Boolean @default(false)\n  reportedIncidents Incident[] @relation("IncidentReporter")\n  reviewedIncidents Incident[] @relation("IncidentReviewer")\n  restrictions PaymentRestriction[] @relation("RestrictedUser")\n  createdRestrictions PaymentRestriction[] @relation("RestrictionCreator")\n  revokedRestrictions PaymentRestriction[] @relation("RestrictionRevoker")
+  sessions     Session[]
+  combinedPaymentRestricted Boolean @default(false)
+  reportedIncidents Incident[] @relation("IncidentReporter")
+  reviewedIncidents Incident[] @relation("IncidentReviewer")
+  restrictions PaymentRestriction[] @relation("RestrictedUser")
+  createdRestrictions PaymentRestriction[] @relation("RestrictionCreator")
+  revokedRestrictions PaymentRestriction[] @relation("RestrictionRevoker")
 }
 
 model Vehicle {
@@ -129,7 +146,8 @@ model Booking {
   idempotencyKey  String        @unique
   passenger       User?         @relation("PassengerBookings", fields: [passengerId], references: [id])
   assignment      Assignment?
-  payment         Payment?\n  incidents       Incident[]
+  payment         Payment?
+  incidents       Incident[]
 
   @@index([direction, status, confirmedAt])
 }
