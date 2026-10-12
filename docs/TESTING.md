@@ -1,14 +1,14 @@
 # Pruebas
 
-## Comandos
+## Ejecución
 
-Con PostgreSQL configurado: npm ci, npm run db:generate, npm run db:migrate, npm run typecheck, npm test, npm run build y npm audit. El workflow de GitHub Actions ejecuta estos pasos con PostgreSQL 16 y el lockfile comprometido.
+Con PostgreSQL configurado: npm ci, npm run db:generate, npm run db:migrate, npm run typecheck, npm test, npm run build y npm audit. GitHub Actions ejecuta estos pasos con PostgreSQL 16 y lockfile.
 
-## Cobertura
+## Cobertura actual
 
-- tests/domain.test.ts: Bs 35 por pasajero, Bs 245 para siete, rechazo de ocho, expreso de siete asientos, 5+2, sobrecapacidad, dirección, partes combinadas y estados de pago.
-- tests/dispatch.integration.test.ts: con DATABASE_URL, contra PostgreSQL real, prueba 5+2 y bloqueo de asiento adicional, doble reclamación simultánea de una reserva y dos solicitudes de cuatro asientos compitiendo por siete. Se verifica ganador único y ocupación no superior a siete.
+- tests/domain.test.ts: Bs 35/persona, siete Bs 245, ocho rechazados, expreso de siete asientos, 5+2, sobrecapacidad, dirección, suma combinada y estados de pago.
+- tests/dispatch.integration.test.ts: en PostgreSQL real verifica 5+2 sin exceder siete, reclamo simultáneo con ganador único, dos solicitudes de cuatro asientos en carrera y restricción combinada solo después de revisión con posterior corrección/reversión.
 
 ## Pendiente
 
-Faltan pruebas de integración para login/roles, propiedad de reservas, limitación de intentos, verificación QR, efectivo, restricciones de pago combinado, auditoría de cancelación/corrección, recorrido de cola y compatibilidad real de recogida. No hay todavía pruebas E2E de navegador. No afirmar cobertura de producción hasta completar estos escenarios.
+Faltan pruebas de integración de login/roles y propiedad de reservas, rate limit, efectivo/QR dentro de API, cola bajo concurrencia, revisión de incidentes simultánea y navegación completa. No hay pruebas E2E del navegador. No afirmar que está cubierta producción hasta completar los casos y recibir un CI verde tras el último cambio.
