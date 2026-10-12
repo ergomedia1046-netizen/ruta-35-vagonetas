@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { prisma } from "../src/db.js";
 import { assignBooking } from "../src/services/dispatch.js";
+import { createBooking } from "../src/services/bookings.js";
+import { reportCombinedIncident, reviewIncident, restrictCombinedPayment, correctIncident } from "../src/services/incidents.js";
 
 const suite = describe.skipIf(!process.env.DATABASE_URL);
 suite("PostgreSQL dispatch concurrency", () => {
   let userId = "";
   let vehicleId = "";
   let bookingIds: string[] = [];
+  let userIds: string[] = [];
 
   afterEach(async () => {
     if (bookingIds.length) {
@@ -44,7 +47,7 @@ suite("PostgreSQL dispatch concurrency", () => {
       email: `integration-${crypto.randomUUID()}@example.test`,
       passwordHash: "not-used-in-this-service-test", role: "ADMIN"
     }});
-    userId = user.id;
+    userId = user.id;\n    userIds.push(user.id);
     const vehicle = await prisma.vehicle.create({ data: { plate: `T-${crypto.randomUUID().slice(0, 8)}`, capacity: 7 } });
     vehicleId = vehicle.id;
   }
