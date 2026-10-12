@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { assertCanAssign } from "../domain/booking.js";
 
 export async function getActiveShift(db: PrismaClient, userId: string) {
   return db.driverShift.findFirst({
@@ -27,7 +28,23 @@ export async function listCompatibleRequests(db: PrismaClient, userId: string) {
     where: { status: "CONFIRMED", confirmedAt: { not: null }, direction: queue.direction, assignment: { is: null } },
     orderBy: [{ confirmedAt: "asc" }, { createdAt: "asc" }], take: 50
   });
-  return bookings;
+  const assigned = await db.assignment.findMany({
+    where: { vehicleId: shift.vehicleId, booking: { status: { in: ["ASSIGNED", "CONFIRMED"] } } },
+    include: { booking: { select: { passengers: true, direction: true } } }
+  });
+  const occupiedSeats = assigned.reduce((n, item) => n + item.booking.passengers, 0);
+  return bookings.filter((booking) => {
+    try {
+      assertCanAssign({
+        direction: assigned[0]?.booking.direction ?? booking.direction,
+        requestedDirection: booking.direction,
+        occupiedSeats, requestedPassengers: booking.passengers, kind: booking.kind
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 export async function updateVehicleStatus(db: PrismaClient, vehicleId: string, actorId: string,
@@ -41,10 +58,22 @@ export async function updateVehicleStatus(db: PrismaClient, vehicleId: string, a
       });
       if (!shift) throw new Error("driver is not assigned to this vehicle");
     }
+    const vehicle = await tx.vehicle.findUnique({ where: { id: vehicleId } });
+    if (!vehicle) throw new Error("vehicle not found");
+    if (actor.role !== "ADMIN") {
+      const allowed = (vehicle.status === "QUEUED" && status === "ON_TRIP")
+        || (vehicle.status === "ON_TRIP" && status === "AVAILABLE");
+      if (!allowed) throw new Error("invalid driver vehicle transition");
+    } else if (vehicle.status === "ON_TRIP" && status === "INACTIVE") {
+      throw new Error("vehicle cannot be deactivated during a trip");
+    }
     const updated = await tx.vehicle.update({ where: { id: vehicleId }, data: { status } });
+    if (status === "ON_TRIP") {
+      await tx.queueEntry.updateMany({ where: { vehicleId, active: true }, data: { active: false } });
+    }
     await tx.auditEvent.create({ data: {
       actorId, action: "VEHICLE_STATUS_CHANGED", entityType: "Vehicle", entityId: vehicleId,
-      details: { status }
+      details: { previousStatus: vehicle.status, status }
     }});
     return updated;
   });
