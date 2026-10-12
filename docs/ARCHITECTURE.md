@@ -1,36 +1,32 @@
 # Arquitectura de Ruta 35
 
-## Estado implementado
+## Implementación
 
-Monolito TypeScript con API REST Fastify, páginas estáticas servidas desde el mismo origen, PostgreSQL y Prisma. Esta estructura evita CORS entre interfaz y API. No hay integración externa ni servicios contratados.
+Monolito TypeScript: API REST Fastify, interfaz adaptable estática servida desde el mismo origen, PostgreSQL y Prisma. Zod valida entradas. No se necesita CORS para la arquitectura same-origin.
 
-## Componentes
-
-- Interfaz adaptable en public/index.html para pasajero, conductor y administración básica.
-- Backend Node.js 22/Fastify con validación Zod.
-- PostgreSQL persistente; esquema y migración inicial en prisma/.
-- Contraseñas Argon2id; sesiones opacas aleatorias persistidas como hash, cookies HttpOnly/SameSite Strict y Secure en producción.
-- Roles PASSENGER, DRIVER y ADMIN comprobados en endpoints.
-- CI con PostgreSQL 16, lockfile npm, generación y migración Prisma, TypeScript, Vitest, build y auditoría npm.
+- Node.js 22, Fastify y PostgreSQL.
+- Contraseñas Argon2id; sesiones opacas aleatorias, hash SHA-256 en base de datos, expiración de 12 h, cookies HttpOnly/SameSite Strict y Secure en producción.
+- Roles PASSENGER, DRIVER y ADMIN.
+- Migraciones SQL versionadas y CI con lockfile, PostgreSQL 16, typecheck, unit/integration tests, build y npm audit.
 
 ## Concurrencia y asignación
 
-La asignación corre en transacción Serializable, bloquea primero la solicitud y luego el vehículo mediante SELECT FOR UPDATE y recalcula reservas asignadas/capacidad en la transacción. Booking.idempotencyKey y Assignment.bookingId son únicos. La asignación requiere estado CONFIRMED y dirección compatible; solicitudes pendientes no consumen capacidad. Se consideran la hora de confirmación para solicitudes compatibles y la hora/posición de cola para elegir vehículo. Pruebas de integración PostgreSQL ejercitan sobreventa, reclamo concurrente y 5+2.
+La asignación usa transacción Serializable, bloquea solicitud y vehículo mediante SELECT FOR UPDATE y recalcula cupos comprometidos. Assignment.bookingId e idempotencyKey son únicos. Solo solicitudes confirmadas consumen capacidad. Revisa dirección, capacidad de siete, prioridad temporal compatible y orden de fila. CI ejecuta pruebas PostgreSQL para 5+2, reclamo simultáneo y dos grupos de cuatro compitiendo por siete.
 
-La compatibilidad de recogidas de carretera y múltiples paradas todavía se reduce a dirección y punto de recogida; requiere especificación operacional de la asociación.
+La viabilidad real de recogidas de carretera todavía se modela solo con dirección y punto, por lo que la asociación debe aprobar reglas de paradas antes de producción.
 
-## Modelo de datos
+## Persistencia
 
-User, Session, Vehicle, DriverShift, QueueEntry, Booking, Assignment, Payment, PaymentPart y AuditEvent. El dinero se guarda como entero Bs. El total se congela en la reserva. Capacidad fija siete. El modelo no contiene aún la configuración versionada de tarifas, Incidents/Restrictions ni endpoints completos para errores/correcciones.
+User, Session, Vehicle, DriverShift, QueueEntry, Booking, Assignment, Payment, PaymentPart, Incident, PaymentRestriction y AuditEvent. Dinero se guarda como entero Bs y el total queda congelado por reserva. Recargos todavía no tienen consola de configuración versionada.
 
-## Pago
+Las incidencias registran importe pendiente y reportante; revisión administrativa, restricción solo para COMBINED después de decisión substantiated y corrección auditada. La corrección revoca la restricción asociada.
 
-QR y efectivo mantienen partes y estados separados. El efectivo lo confirma el conductor asignado al registrar recepción. QR solo puede marcarse pagado por revisión manual de administrador y queda auditada. No existe pasarela QR. Las restricciones a pago combinado e incidencias aún no están desarrolladas.
+## Pagos
+
+QR permanece pendiente hasta revisión manual administrativa; no existe proveedor QR. Efectivo queda pendiente hasta confirmación del conductor en turno y vehículo asignado. Combinado valida suma exacta y estados parciales. La restricción aprobada solo bloquea el método combinado.
 
 ## Seguridad y límites
 
-Las sesiones duran 12 horas; login limitado a cinco intentos por minuto. Sesiones expiradas se rechazan, pero falta tarea de limpieza. La interfaz/API está same-origin y CORS no está habilitado. Falta protección CSRF dedicada, MFA, rate limits en todas las acciones sensibles, revisión independiente y pruebas de acceso exhaustivas.
+Login limitado a 5 intentos/minuto, sesión de 12 h, control de roles y propietario, logs redactados y auditoría de acciones. El bootstrap inicial solo crea cuenta si la tabla de usuarios está vacía.
 
-## Operación
-
-El servicio necesita variables de entorno y PostgreSQL. Backups, alertas, alojamiento, dominio y restauración son decisiones pendientes. Consulte DEPLOYMENT.md.
+Pendientes: MFA, protección CSRF dedicada, límites en todas las operaciones sensibles, limpieza automática de sesiones expiradas, revisión de seguridad independiente, compatibilidad completa de recogidas, políticas de retención y pruebas E2E. Backup, monitorización y hosting deben configurarse por la asociación.
