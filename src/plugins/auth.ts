@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import cookie from "@fastify/cookie";
+import fp from "fastify-plugin";
 import rateLimit from "@fastify/rate-limit";
 import argon2 from "argon2";
 import { createHmac, randomBytes } from "node:crypto";
@@ -12,7 +13,7 @@ declare module "fastify" {
 const COOKIE = "ruta35_session";
 const hashToken = (token: string) => createHmac("sha256", process.env.SESSION_SECRET!).update(token).digest("hex");
 
-export const authPlugin: FastifyPluginAsync = async (app) => {
+const configureAuth: FastifyPluginAsync = async (app) => {
   await app.register(cookie);
   await app.register(rateLimit, { global: false });
   app.decorateRequest("authUser", null);
@@ -80,6 +81,8 @@ export const authPlugin: FastifyPluginAsync = async (app) => {
     return request.authUser;
   });
 };
+
+export const authPlugin = fp(configureAuth, { name: "ruta35-auth", fastify: "5.x" });
 
 export function requireRole(...roles: Array<"PASSENGER" | "DRIVER" | "ADMIN">) {
   return async (request: FastifyRequest, reply: import("fastify").FastifyReply): Promise<void> => {

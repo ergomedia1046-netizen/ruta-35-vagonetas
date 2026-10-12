@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import argon2 from "argon2";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "../src/db.js";
 
@@ -54,6 +55,34 @@ suite("test-only passenger registration and secure session", () => {
     const me = await app.inject({ method: "GET", url: "/api/v1/auth/me", headers: { cookie: cookie.split(";")[0] } });
     expect(me.statusCode).toBe(200);
     expect(me.json()).toMatchObject({ id: created.json().id, role: "PASSENGER" });
+    const headers = { cookie: cookie.split(";")[0] };
+    const bookings = await app.inject({ method: "GET", url: "/api/v1/bookings", headers });
+    expect(bookings.statusCode).toBe(200);
+    expect(bookings.json()).toEqual([]);
+    for (const url of ["/api/v1/admin/audit", "/api/v1/driver/overview"]) {
+      expect((await app.inject({ method: "GET", url, headers })).statusCode).toBe(403);
+    }
+    expect((await app.inject({ method: "GET", url: "/api/v1/bookings" })).statusCode).toBe(401);
+    expect((await app.inject({ method: "POST", url: "/api/v1/auth/logout", headers })).statusCode).toBe(204);
+    expect((await app.inject({ method: "GET", url: "/api/v1/bookings", headers })).statusCode).toBe(401);
+  });
+
+  it("authenticates administrators on protected routes outside the auth plugin", async () => {
+    const email = `admin-${randomUUID()}@example.test`;
+    const password = "Test-only-strong-password-2026!";
+    emails.push(email);
+    await prisma.user.create({
+      data: { email, role: "ADMIN", passwordHash: await argon2.hash(password, { type: argon2.argon2id }) }
+    });
+    process.env.NODE_ENV = "production";
+    const login = await app.inject({
+      method: "POST", url: "/api/v1/auth/login", payload: { email, password }
+    });
+    expect(login.statusCode).toBe(200);
+    const headers = { cookie: String(login.headers["set-cookie"]).split(";")[0] };
+    for (const url of ["/api/v1/admin/audit", "/api/v1/admin/bookings/pending", "/api/v1/admin/payments/pending-qr"]) {
+      expect((await app.inject({ method: "GET", url, headers })).statusCode).toBe(200);
+    }
   });
 
   it("rejects real-looking email addresses and disables public registration outside test mode", async () => {

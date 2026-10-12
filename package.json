@@ -22,7 +22,8 @@
     "@fastify/cookie": "11.0.2",
     "@fastify/rate-limit": "10.3.0",
     "argon2": "0.41.1",
-    "@fastify/static": "10.1.6"
+    "@fastify/static": "10.1.6",
+    "fastify-plugin": "5.1.0"
   },
   "devDependencies": {
     "@types/node": "22.18.6",
