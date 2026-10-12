@@ -6,6 +6,14 @@ export async function assignBooking(db: Db, bookingId: string, vehicleId: string
   return db.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "Booking" WHERE id = ${bookingId} FOR UPDATE`;
     await tx.$queryRaw`SELECT id FROM "Vehicle" WHERE id = ${vehicleId} FOR UPDATE`;
+    const actor = await tx.user.findUnique({ where: { id: actorId } });
+    if (!actor || !actor.active) throw new Error("active account required");
+    if (actor.role !== "ADMIN") {
+      const shift = await tx.driverShift.findFirst({
+        where: { userId: actorId, vehicleId, OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }] }
+      });
+      if (!shift) throw new Error("driver is not assigned to this vehicle");
+    }
     const booking = await tx.booking.findUnique({ where: { id: bookingId }, include: { assignment: true } });
     const vehicle = await tx.vehicle.findUnique({ where: { id: vehicleId } });
     if (!booking || !vehicle) throw new Error("booking or vehicle not found");
