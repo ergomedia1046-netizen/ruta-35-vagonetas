@@ -1,11 +1,13 @@
 # Pruebas
 
-Pruebas unitarias del dominio están en tests/domain.test.ts. La lógica de servicios requiere pruebas de integración contra PostgreSQL, especialmente bloqueos y aislamiento Serializable. Estas aún no se han añadido ni ejecutado.
+## Ejecutar
 
-Matriz obligatoria:
-- Tarifas: uno Bs 35; siete Bs 245; ocho rechazados; expreso ocupa siete.
-- Asignación: 5+2 completa; exceso rechazado; dirección incompatible; prioridad ciudad/carretera; sin sobreventa concurrente; aceptación doble con ganador único.
-- Pagos: QR pendiente hasta verificación administrativa; efectivo pendiente hasta recepción; combinado 30+5 válido para 35; suma incorrecta rechazada; restricción no bloquea otros métodos.
-- Seguridad: conductor sin administración; reserva protegida por propiedad; cancelaciones y correcciones auditables.
+Con Node.js 22 y PostgreSQL configurado: npm ci, npm run db:generate, npm run db:migrate, npm run typecheck, npm test y npm run build. GitHub Actions ejecuta migraciones contra PostgreSQL 16 y también npm audit.
 
-CI ejecutará formato, lint, tipos, pruebas, compilación y auditoría de dependencias. Los flujos aún requieren pruebas reales de PostgreSQL antes de producción.
+## Casos unitarios actuales
+
+tests/domain.test.ts cubre precio Bs 35, total de Bs 245 para siete, rechazo de ocho, expreso de siete asientos, asignación 5+2, capacidad, dirección, importes combinados y estados iniciales de pago.
+
+## Cobertura pendiente
+
+Aún hacen falta pruebas PostgreSQL concurrentes de sobreventa y doble aceptación; prioridad ciudad/carretera y orden de vehículos; pruebas de efectivo/QR dentro de transacciones; prueba de restricción combinada; permisos de conductor y acceso a reservas ajenas; auditoría de cancelaciones/correcciones; y pruebas de navegador para desconexión e idempotencia. No se afirma que estos escenarios estén verificados por mocks.
