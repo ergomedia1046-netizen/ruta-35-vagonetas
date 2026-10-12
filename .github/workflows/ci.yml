@@ -7,6 +7,24 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ruta35
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: ruta35
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ruta35 -d ruta35"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://ruta35:ci-password@localhost:5432/ruta35
+      SESSION_SECRET: ci-only-secret-with-at-least-32-characters
+      NODE_ENV: test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -14,6 +32,7 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npm run db:generate
+      - run: npm run db:migrate
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
