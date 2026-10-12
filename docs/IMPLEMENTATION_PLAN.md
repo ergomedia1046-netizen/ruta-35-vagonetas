@@ -1,12 +1,21 @@
 # Plan de implementación
 
-1. Arquitectura, estructura y decisiones. Salida: documentación revisada y pendientes identificados.
-2. PostgreSQL, migraciones, sesiones, hash y roles. Salida: pruebas de rol y propiedad.
-3. Vehículos, fila, reservas, tarifas y asignación transaccional. Salida: capacidad, dirección, prioridad e idempotencia concurrentes verificadas.
-4. Efectivo, QR manual o integrado, combinado e incidentes. Salida: pagos parciales independientes y auditoría.
-5. Interfaces conectadas a API, móviles y con señal de desconexión.
-6. Pruebas, análisis, CI y correcciones. Salida: CI verde y escenarios cubiertos.
-7. Despliegue, backups, monitoreo, recuperación y checklist.
+1. Arquitectura, estructura y documentación.
+2. PostgreSQL, migraciones, sesiones, hash y permisos.
+3. Vehículos, fila, reservas, tarifas, asignaciones y concurrencia.
+4. Efectivo, QR, combinado, incidencias y auditoría.
+5. Interfaces pasajero, conductor y administración.
+6. Pruebas, análisis, CI y correcciones.
+7. Despliegue, copias, recuperación y checklist.
 
-## Estado
-Etapa 1: documentos iniciales y estructura técnica publicados. Etapa 2: esquema de persistencia y base de reglas implementados parcialmente; autenticación y permisos pendientes. Etapas 3–7 pendientes. No declarar pasarela integrada o producción lista sin verificaciones.
+## Estado comprobable
+
+- Etapa 1: completa como documentación y estructura inicial.
+- Etapa 2: parcial. Hay esquema/migración PostgreSQL, login Argon2id con sesión revocable, roles en las rutas y cuentas creadas por administración/bootstrap; falta gestión de cuentas completa, MFA y pruebas de seguridad.
+- Etapa 3: parcial. Tarifas/capacidad, reservas idempotentes, confirmación, cola y asignación transaccional implementadas; falta verificar concurrencia real, reglas completas de carretera y manejo de estados de viaje.
+- Etapa 4: parcial. Componentes efectivo/QR/combinado y revisión manual QR están en servicios; faltan incidentes, restricciones y pruebas de flujos integrados.
+- Etapa 5: parcial. Interfaz pasajero y panel básico conductor; consola administrativa y pantallas de pagos incompletas.
+- Etapa 6: parcial. Unit tests y CI con PostgreSQL. Esperando resultado del último workflow tras fijar dependencias; faltan tests de integración/E2E.
+- Etapa 7: pendiente. Sin hosting, dominio, proveedor QR, backups de producción ni recuperación probada.
+
+No desplegar en producción hasta completar las limitaciones anteriores y obtener CI verde.
