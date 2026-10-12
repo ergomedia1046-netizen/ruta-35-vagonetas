@@ -12,12 +12,41 @@ import { recordCashReceived, verifyQrManually } from "./services/payments.js";
 import { createUser, createVehicle, createDriverShift, queueVehicle } from "./services/admin.js";
 import { getActiveShift, listCompatibleRequests, listDriverBookings, updateVehicleStatus } from "./services/driver.js";
 import argon2 from "argon2";
+import { correctIncident, listIncidents, reportCombinedIncident, restrictCombinedPayment, reviewIncident } from "./services/incidents.js";
 
 const app = Fastify({ logger: { redact: ["req.headers.authorization", "req.headers.cookie"] } });
 await app.register(fastifyStatic, { root: join(process.cwd(), "public"), prefix: "/" });
 await app.register(authPlugin);
 app.get("/health", async () => ({ status: "ok", service: "ruta-35-api" }));
 
+app.post("/api/v1/driver/incidents", { preHandler: requireRole("DRIVER") }, async (request, reply) => {
+  const body = z.object({ bookingId: z.string().min(1) }).safeParse(request.body);
+  if (!body.success) return reply.code(400).send({ error: "invalid_request" });
+  try { return reply.code(201).send(await reportCombinedIncident(prisma, body.data.bookingId, request.authUser!.id)); }
+  catch { return reply.code(409).send({ error: "incident_not_reportable" }); }
+});
+app.get("/api/v1/admin/incidents", { preHandler: requireRole("ADMIN") }, async () => listIncidents(prisma));
+app.post("/api/v1/admin/incidents/:id/review", { preHandler: requireRole("ADMIN") }, async (request, reply) => {
+  const params = z.object({ id: z.string().min(1) }).safeParse(request.params);
+  const body = z.object({ decision: z.enum(["SUBSTANTIATED", "NOT_SUBSTANTIATED"]), notes: z.string().trim().min(3).max(1000) }).safeParse(request.body);
+  if (!params.success || !body.success) return reply.code(400).send({ error: "invalid_request" });
+  try { return await reviewIncident(prisma, params.data.id, request.authUser!.id, body.data.decision, body.data.notes); }
+  catch { return reply.code(409).send({ error: "incident_not_reviewable" }); }
+});
+app.post("/api/v1/admin/incidents/:id/restrict-combined", { preHandler: requireRole("ADMIN") }, async (request, reply) => {
+  const params = z.object({ id: z.string().min(1) }).safeParse(request.params);
+  const body = z.object({ reason: z.string().trim().min(3).max(500) }).safeParse(request.body);
+  if (!params.success || !body.success) return reply.code(400).send({ error: "invalid_request" });
+  try { return await restrictCombinedPayment(prisma, params.data.id, request.authUser!.id, body.data.reason); }
+  catch { return reply.code(409).send({ error: "incident_not_eligible_for_restriction" }); }
+});
+app.post("/api/v1/admin/incidents/:id/correct", { preHandler: requireRole("ADMIN") }, async (request, reply) => {
+  const params = z.object({ id: z.string().min(1) }).safeParse(request.params);
+  const body = z.object({ reason: z.string().trim().min(3).max(1000) }).safeParse(request.body);
+  if (!params.success || !body.success) return reply.code(400).send({ error: "invalid_request" });
+  try { return await correctIncident(prisma, params.data.id, request.authUser!.id, body.data.reason); }
+  catch { return reply.code(409).send({ error: "incident_not_correctable" }); }
+});
 app.get("/api/v1/admin/bookings/pending", { preHandler: requireRole("ADMIN") }, async () => {
   return prisma.booking.findMany({
     where: { status: "PENDING" },
