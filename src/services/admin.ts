@@ -9,7 +9,7 @@ export async function createUser(db: PrismaClient, actorId: string, args: { emai
     });
     await tx.auditEvent.create({ data: {
       actorId, action: "USER_CREATED", entityType: "User", entityId: user.id,
-      details: { email: user.email, role: user.role }
+      details: { role: user.role }
     }});
     return { id: user.id, email: user.email, role: user.role };
   });
