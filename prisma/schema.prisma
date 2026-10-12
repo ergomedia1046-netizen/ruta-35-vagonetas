@@ -7,126 +7,177 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role { PASSENGER DRIVER ADMIN }
-enum Direction { YACUIBA_TO_VILLAMONTES VILLAMONTES_TO_YACUIBA }
-enum BookingKind { ORDINARY EXPRESS }
-enum BookingStatus { PENDING CONFIRMED ASSIGNED CANCELLED COMPLETED }
-enum PaymentMethod { CASH QR COMBINED }
-enum PaymentStatus { PENDING PARTIAL PAID REVIEW_REQUIRED REJECTED }
-enum PartKind { CASH QR }
-enum PartStatus { PENDING RECEIVED VERIFIED REJECTED }
-enum VehicleStatus { AVAILABLE QUEUED ON_TRIP INACTIVE }
+enum Role {
+  PASSENGER
+  DRIVER
+  ADMIN
+}
+
+enum Direction {
+  YACUIBA_TO_VILLAMONTES
+  VILLAMONTES_TO_YACUIBA
+}
+
+enum BookingKind {
+  ORDINARY
+  EXPRESS
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  ASSIGNED
+  CANCELLED
+  COMPLETED
+}
+
+enum PaymentMethod {
+  CASH
+  QR
+  COMBINED
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+  REVIEW_REQUIRED
+  REJECTED
+}
+
+enum PartKind {
+  CASH
+  QR
+}
+
+enum PartStatus {
+  PENDING
+  RECEIVED
+  VERIFIED
+  REJECTED
+}
+
+enum VehicleStatus {
+  AVAILABLE
+  QUEUED
+  ON_TRIP
+  INACTIVE
+}
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String        @id @default(cuid())
+  email        String        @unique
   passwordHash String
   role         Role
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  bookings     Booking[] @relation("PassengerBookings")
-  sessions     Session[]
+  active       Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  bookings     Booking[]     @relation("PassengerBookings")
   shifts       DriverShift[]
   auditEvents  AuditEvent[]
+  sessions     Session[]
 }
 
 model Vehicle {
-  id          String @id @default(cuid())
-  plate       String @unique
-  capacity    Int @default(7)
-  status      VehicleStatus @default(AVAILABLE)
+  id           String        @id @default(cuid())
+  plate        String        @unique
+  capacity     Int           @default(7)
+  status       VehicleStatus @default(AVAILABLE)
   queueEntries QueueEntry[]
-  assignments Assignment[]
-  shifts      DriverShift[]
+  assignments  Assignment[]
+  shifts       DriverShift[]
 }
 
 model DriverShift {
-  id        String @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
   vehicleId String
   startsAt  DateTime
   endsAt    DateTime?
-  user      User @relation(fields:[userId], references:[id])
-  vehicle   Vehicle @relation(fields:[vehicleId], references:[id])
+  user      User      @relation(fields: [userId], references: [id])
+  vehicle   Vehicle   @relation(fields: [vehicleId], references: [id])
+
   @@index([userId, endsAt])
 }
 
 model QueueEntry {
-  id        String @id @default(cuid())
+  id        String    @id @default(cuid())
   vehicleId String
   direction Direction
-  arrivedAt DateTime @default(now())
+  arrivedAt DateTime  @default(now())
   position  Int
-  active    Boolean @default(true)
-  vehicle   Vehicle @relation(fields:[vehicleId], references:[id])
+  active    Boolean   @default(true)
+  vehicle   Vehicle   @relation(fields: [vehicleId], references: [id])
+
   @@index([direction, active, arrivedAt, position])
 }
 
 model Booking {
-  id             String @id @default(cuid())
-  passengerId    String?
-  direction      Direction
-  origin         String
-  destination    String
-  pickupPoint    String
+  id              String        @id @default(cuid())
+  passengerId     String?
+  direction       Direction
+  origin          String
+  destination     String
+  pickupPoint     String
   pickupReference String?
-  passengers     Int
-  kind           BookingKind @default(ORDINARY)
-  totalBs        Int
-  status         BookingStatus @default(PENDING)
-  paymentMethod  PaymentMethod
-  createdAt      DateTime @default(now())
-  confirmedAt    DateTime?
-  idempotencyKey String @unique
-  passenger      User? @relation("PassengerBookings", fields:[passengerId], references:[id])
-  assignment     Assignment?
-  payment        Payment?
+  passengers      Int
+  kind            BookingKind   @default(ORDINARY)
+  totalBs         Int
+  status          BookingStatus @default(PENDING)
+  paymentMethod   PaymentMethod
+  createdAt       DateTime      @default(now())
+  confirmedAt     DateTime?
+  idempotencyKey  String        @unique
+  passenger       User?         @relation("PassengerBookings", fields: [passengerId], references: [id])
+  assignment      Assignment?
+  payment         Payment?
+
   @@index([direction, status, confirmedAt])
 }
 
 model Assignment {
-  id         String @id @default(cuid())
-  bookingId  String @unique
+  id         String   @id @default(cuid())
+  bookingId  String   @unique
   vehicleId  String
   assignedAt DateTime @default(now())
-  booking    Booking @relation(fields:[bookingId], references:[id])
-  vehicle    Vehicle @relation(fields:[vehicleId], references:[id])
+  booking    Booking  @relation(fields: [bookingId], references: [id])
+  vehicle    Vehicle  @relation(fields: [vehicleId], references: [id])
 }
 
 model Payment {
-  id        String @id @default(cuid())
-  bookingId String @unique
+  id        String        @id @default(cuid())
+  bookingId String        @unique
   method    PaymentMethod
   totalBs   Int
   status    PaymentStatus @default(PENDING)
   parts     PaymentPart[]
-  booking   Booking @relation(fields:[bookingId], references:[id])
+  booking   Booking       @relation(fields: [bookingId], references: [id])
 }
 
 model PaymentPart {
-  id          String @id @default(cuid())
-  paymentId   String
-  kind        PartKind
-  amountBs    Int
-  status      PartStatus @default(PENDING)
-  verifiedBy  String?
-  verifiedAt  DateTime?
-  payment     Payment @relation(fields:[paymentId], references:[id])
+  id         String     @id @default(cuid())
+  paymentId  String
+  kind       PartKind
+  amountBs   Int
+  status     PartStatus @default(PENDING)
+  verifiedBy String?
+  verifiedAt DateTime?
+  payment    Payment    @relation(fields: [paymentId], references: [id])
+
   @@index([paymentId, kind])
 }
 
 model AuditEvent {
-  id         String @id @default(cuid())
+  id         String   @id @default(cuid())
   actorId    String?
   action     String
   entityType String
   entityId   String
   details    Json
   createdAt  DateTime @default(now())
-  actor      User? @relation(fields:[actorId], references:[id])
+  actor      User?    @relation(fields: [actorId], references: [id])
+
   @@index([entityType, entityId, createdAt])
 }
-
 
 model Session {
   id        String   @id @default(cuid())
@@ -135,5 +186,6 @@ model Session {
   expiresAt DateTime
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([expiresAt])
 }
