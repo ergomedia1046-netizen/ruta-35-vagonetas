@@ -1,0 +1,27 @@
+{
+  "name": "ruta-35-vagonetas",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.16.2",
+    "zod": "^4.1.5",
+    "fastify": "^5.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.6",
+    "prisma": "^6.16.2",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
