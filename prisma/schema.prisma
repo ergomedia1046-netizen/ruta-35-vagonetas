@@ -74,7 +74,7 @@ model User {
   bookings     Booking[]     @relation("PassengerBookings")
   shifts       DriverShift[]
   auditEvents  AuditEvent[]
-  sessions     Session[]
+  sessions     Session[]\n  combinedPaymentRestricted Boolean @default(false)\n  reportedIncidents Incident[] @relation("IncidentReporter")\n  reviewedIncidents Incident[] @relation("IncidentReviewer")\n  restrictions PaymentRestriction[] @relation("RestrictedUser")\n  createdRestrictions PaymentRestriction[] @relation("RestrictionCreator")\n  revokedRestrictions PaymentRestriction[] @relation("RestrictionRevoker")
 }
 
 model Vehicle {
@@ -129,7 +129,7 @@ model Booking {
   idempotencyKey  String        @unique
   passenger       User?         @relation("PassengerBookings", fields: [passengerId], references: [id])
   assignment      Assignment?
-  payment         Payment?
+  payment         Payment?\n  incidents       Incident[]
 
   @@index([direction, status, confirmedAt])
 }
@@ -188,4 +188,44 @@ model Session {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([expiresAt])
+}
+
+model Incident {
+  id            String           @id @default(cuid())
+  bookingId     String
+  reportedById  String
+  amountBs      Int
+  status        IncidentStatus   @default(OPEN)
+  reportedAt    DateTime         @default(now())
+  reviewedById  String?
+  decision      IncidentDecision?
+  reviewNotes   String?
+  reviewedAt    DateTime?
+  correctedAt   DateTime?
+  correctionNotes String?
+  booking       Booking          @relation(fields: [bookingId], references: [id])
+  reporter      User             @relation("IncidentReporter", fields: [reportedById], references: [id])
+  reviewer      User?            @relation("IncidentReviewer", fields: [reviewedById], references: [id])
+  restriction   PaymentRestriction?
+
+  @@index([status, reportedAt])
+  @@index([bookingId, reportedAt])
+}
+
+model PaymentRestriction {
+  id          String   @id @default(cuid())
+  userId      String
+  incidentId  String   @unique
+  createdById String
+  revokedById String?
+  active      Boolean  @default(true)
+  reason      String
+  createdAt   DateTime @default(now())
+  revokedAt   DateTime?
+  user        User     @relation("RestrictedUser", fields: [userId], references: [id])
+  incident    Incident @relation(fields: [incidentId], references: [id])
+  createdBy   User     @relation("RestrictionCreator", fields: [createdById], references: [id])
+  revokedBy   User?    @relation("RestrictionRevoker", fields: [revokedById], references: [id])
+
+  @@index([userId, active])
 }
