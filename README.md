@@ -4,11 +4,11 @@ Aplicación en desarrollo para reservas y despacho en la ruta Yacuiba–Villamon
 
 ## Estado
 
-La rama main contiene un MVP de backend Fastify/TypeScript, PostgreSQL/Prisma, sesiones con cookies, reglas del dominio, interfaz adaptable para pasajeros y vistas operativas básicas del conductor. No está lista para operación real: faltan administración web, gestión completa de tarifas y recargos, incidencias/restricciones, integración QR, pruebas concurrentes e integración completa de flujos.
+La rama main contiene un MVP de backend Fastify/TypeScript, PostgreSQL/Prisma, sesiones seguras, reservas, pagos manuales, asignación de vagonetas e interfaces de pasajero, conductor y administración. Incluye un Blueprint Render gratuito para una instalación web temporal marcada como entorno de pruebas. No está habilitada para operación real.
 
 ## Requisitos y arranque local
 
-Se requiere Node.js 22 o posterior y PostgreSQL 16 o compatible. Configure las variables de entorno desde un gestor local de secretos o desde el shell; la aplicación no carga archivos .env automáticamente.
+Se requiere Node.js 22 y PostgreSQL 16 o compatible. Configure las variables de entorno desde un gestor local de secretos o desde el shell; la aplicación no carga archivos .env automáticamente.
 
 ```sh
 npm ci
@@ -19,7 +19,7 @@ npm test
 npm run build
 ```
 
-Para crear la primera cuenta de administración, la base debe estar vacía. Configure RUTA35_BOOTSTRAP_EMAIL y RUTA35_BOOTSTRAP_PASSWORD (mínimo 14 caracteres) en el entorno, y ejecute npm run bootstrap:admin. El comando se niega si ya existe cualquier cuenta. Luego inicie con npm run start.
+Para despliegue temporal gratuito, sigue [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) y el Blueprint render.yaml. En el entorno de pruebas se crean pasajeros ficticios con correo @example.test; el administrador crea las cuentas de conductor y administración. El bootstrap inicial solo crea el admin cuando la tabla está vacía.
 
 ## Funcionalidad disponible
 
@@ -29,12 +29,12 @@ Para crear la primera cuenta de administración, la base debe estar vacía. Conf
 - Alta administrativa de usuarios, vehículos, cola y turnos.
 - Recepción de efectivo por el conductor del vehículo asignado; revisión administrativa manual del QR, nunca por captura de pantalla.
 - Reporte de incumplimiento combinado, revisión administrativa, restricción solo para ese método después de una revisión favorable y corrección auditada que puede revertirla.
-- Interfaz web de pasajero y panel básico de conductor; operaciones del conductor advierten que se hagan con el vehículo detenido.
+- Interfaz web de pasajero, panel básico de conductor y administración; en modo prueba muestra avisos y etiqueta todos los pagos como simulados.
 
 ## Verificaciones
 
-GitHub Actions usa PostgreSQL de servicio, npm ci, migración, generación Prisma, TypeScript, Vitest, build y npm audit. Consulte el estado más reciente del workflow antes de usar. Las pruebas actuales cubren reglas del dominio; faltan pruebas de integración concurrente.
+GitHub Actions usa PostgreSQL de servicio, npm ci, generación Prisma, migración, comprobación TypeScript, Vitest, build y npm audit. Consulte [Actions](https://github.com/ergomedia1046-netizen/ruta-35-vagonetas/actions) antes de usar. La interfaz y el backend se sirven desde el mismo origen.
 
 ## Documentación
 
-Consulte docs/ARCHITECTURE.md, docs/BUSINESS_RULES.md, docs/SECURITY.md, docs/TESTING.md y docs/DEPLOYMENT.md. No se ha configurado un proveedor QR ni infraestructura de despliegue. Los recargos deben aprobarse antes de activarse; Bs 2, 5 y 10 no son tarifas oficiales.
+Consulte docs/ARCHITECTURE.md, docs/BUSINESS_RULES.md, docs/SECURITY.md, docs/TESTING.md y docs/DEPLOYMENT.md. No hay proveedor QR real: el modo de prueba es solo manual y no transmite pagos. Render Free es temporal y su PostgreSQL expira a los 30 días. Los recargos deben aprobarse antes de activarse; Bs 2, 5 y 10 no son tarifas oficiales.
