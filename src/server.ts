@@ -6,10 +6,32 @@ import { prisma } from "./db.js";
 import { cancelPendingBooking, createBooking, listPassengerBookings } from "./services/bookings.js";
 import { confirmBooking } from "./services/booking-admin.js";
 import { assignBooking } from "./services/dispatch.js";
+import { recordCashReceived, verifyQrManually } from "./services/payments.js";
 
 const app = Fastify({ logger: { redact: ["req.headers.authorization", "req.headers.cookie"] } });
 await app.register(authPlugin);
 app.get("/health", async () => ({ status: "ok", service: "ruta-35-api" }));
+
+app.post("/api/v1/payments/:id/cash-received", { preHandler: requireRole("DRIVER", "ADMIN") }, async (request, reply) => {
+  const params = z.object({ id: z.string().min(1) }).safeParse(request.params);
+  if (!params.success) return reply.code(400).send({ error: "invalid_request" });
+  try {
+    return await recordCashReceived(prisma, params.data.id, request.authUser!.id);
+  } catch {
+    return reply.code(409).send({ error: "cash_not_receivable" });
+  }
+});
+app.post("/api/v1/admin/payments/:paymentId/qr-parts/:partId/review", { preHandler: requireRole("ADMIN") }, async (request, reply) => {
+  const params = z.object({ paymentId: z.string().min(1), partId: z.string().min(1) }).safeParse(request.params);
+  const body = z.object({ verified: z.boolean() }).safeParse(request.body);
+  if (!params.success || !body.success) return reply.code(400).send({ error: "invalid_request" });
+  try {
+    return await verifyQrManually(prisma, params.data.paymentId, params.data.partId, request.authUser!.id, body.data.verified);
+  } catch {
+    return reply.code(409).send({ error: "qr_part_not_reviewable" });
+  }
+});
+
 
 app.post("/api/v1/admin/bookings/:id/confirm", { preHandler: requireRole("ADMIN") }, async (request, reply) => {
   const params = z.object({ id: z.string().min(1) }).safeParse(request.params);
