@@ -1,14 +1,39 @@
-# https-github.com-tu-usuario-ruta-35-vagonetas
-prueba de trufis
+# Ruta 35
 
-## Ruta 35: implementación inicial
+Aplicación en desarrollo para reservas y despacho en la ruta Yacuiba–Villamontes.
 
-Sistema web modular para reservas y despacho Yacuiba–Villamontes. Esta entrega establece el dominio transaccional inicial y la estructura de documentación; el resto de los flujos de producción se implementará por etapas.
+## Estado
 
-### Desarrollo
+La rama main contiene un MVP de backend Fastify/TypeScript, PostgreSQL/Prisma, sesiones con cookies, reglas del dominio, interfaz adaptable para pasajeros y vistas operativas básicas del conductor. No está lista para operación real: faltan administración web, gestión completa de tarifas y recargos, incidencias/restricciones, integración QR, pruebas concurrentes e integración completa de flujos.
 
-Requiere Node.js 22 y PostgreSQL. Copia .env.example a .env, configura DATABASE_URL y SESSION_SECRET, luego ejecuta npm ci, npm run db:generate, npm run db:migrate, npm test y npm run build.
+## Requisitos y arranque local
 
-### Alcance actual
+Se requiere Node.js 22 o posterior y PostgreSQL 16 o compatible. Configure las variables de entorno desde un gestor local de secretos o desde el shell; la aplicación no carga archivos .env automáticamente.
 
-Se están implementando reglas de tarifa, capacidad, direcciones, concurrencia y estados de pago. No se considera lista para operación real hasta completar autenticación, interfaces, revisión de seguridad, backups y CI verde.
+```sh
+npm ci
+npm run db:generate
+npm run db:migrate
+npm run typecheck
+npm test
+npm run build
+```
+
+Para crear la primera cuenta de administración, la base debe estar vacía. Configure RUTA35_BOOTSTRAP_EMAIL y RUTA35_BOOTSTRAP_PASSWORD (mínimo 14 caracteres) en el entorno, y ejecute npm run bootstrap:admin. El comando se niega si ya existe cualquier cuenta. Luego inicie con npm run start.
+
+## Funcionalidad disponible
+
+- Cotizador ordinario (Bs 35 por pasajero) y expreso (Bs 245 por siete asientos).
+- Alta de solicitudes autenticadas con clave de idempotencia, consulta por propietario y cancelación solo mientras están pendientes.
+- Confirmación administrativa y asignación transaccional con capacidad, dirección, prioridad temporal compatible y orden de fila.
+- Alta administrativa de usuarios, vehículos, cola y turnos.
+- Recepción de efectivo por conductor del vehículo asignado; revisión manual administrativa del QR. La interfaz no acepta capturas como verificación.
+- Interfaz web de pasajero y panel básico de conductor; operaciones del conductor advierten que se hagan con el vehículo detenido.
+
+## Verificaciones
+
+GitHub Actions usa PostgreSQL de servicio, npm ci, migración, generación Prisma, TypeScript, Vitest, build y npm audit. Consulte el estado más reciente del workflow antes de usar. Las pruebas actuales cubren reglas del dominio; faltan pruebas de integración concurrente.
+
+## Documentación
+
+Consulte docs/ARCHITECTURE.md, docs/BUSINESS_RULES.md, docs/SECURITY.md, docs/TESTING.md y docs/DEPLOYMENT.md. No se ha configurado un proveedor QR ni infraestructura de despliegue. Los recargos deben aprobarse antes de activarse; Bs 2, 5 y 10 no son tarifas oficiales.
