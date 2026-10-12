@@ -1,6 +1,8 @@
 import * as SecureStore from "expo-secure-store";
 import { Ruta35Api, type TokenStore } from "./api";
 
+declare const process: { readonly env: { readonly EXPO_PUBLIC_API_BASE_URL?: string } };
+
 export const secureTokenStore: TokenStore = {
   get: () => SecureStore.getItemAsync("ruta35_access_token"),
   set: (token) => SecureStore.setItemAsync("ruta35_access_token", token, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY }),
