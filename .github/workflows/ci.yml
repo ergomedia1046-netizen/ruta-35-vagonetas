@@ -32,9 +32,25 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
+      - run: npm install --no-audit --no-fund --prefix apps/passenger
+      - run: npm install --no-audit --no-fund --prefix apps/driver
       - run: npm run db:generate
       - run: npm run db:migrate
       - run: npm run typecheck
       - run: npm test
+      - run: npm run typecheck --prefix apps/passenger
+      - run: npm run typecheck --prefix apps/driver
+      - run: npx --yes expo-doctor
+        working-directory: apps/passenger
+      - run: npx --yes expo-doctor
+        working-directory: apps/driver
+      - run: npx expo export --platform android --output-dir dist
+        working-directory: apps/passenger
+        env:
+          EXPO_PUBLIC_API_BASE_URL: https://example.test
+      - run: npx expo export --platform android --output-dir dist
+        working-directory: apps/driver
+        env:
+          EXPO_PUBLIC_API_BASE_URL: https://example.test
       - run: npm run build
       - run: npm audit

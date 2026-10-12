@@ -85,6 +85,39 @@ suite("test-only passenger registration and secure session", () => {
     }
   });
 
+  it("issues a revocable native bearer session without a cookie and enforces passenger/driver roles", async () => {
+    const email = `native-${randomUUID()}@example.test`;
+    const driverEmail = `native-driver-${randomUUID()}@example.test`;
+    const password = "Test-only-strong-password-2026!";
+    emails.push(email, driverEmail);
+    await prisma.user.create({
+      data: { email, role: "PASSENGER", passwordHash: await argon2.hash(password, { type: argon2.argon2id }) }
+    });
+    await prisma.user.create({
+      data: { email: driverEmail, role: "DRIVER", passwordHash: await argon2.hash(password, { type: argon2.argon2id }) }
+    });
+    const login = await app.inject({ method: "POST", url: "/api/v1/auth/native/login", payload: { email, password } });
+    expect(login.statusCode).toBe(200);
+    expect(login.headers["set-cookie"]).toBeUndefined();
+    expect(login.headers["cache-control"]).toBe("no-store");
+    const { accessToken, id } = login.json();
+    expect(accessToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(await prisma.session.findFirst({ where: { userId: id }, select: { tokenHash: true } })).not.toMatchObject({ tokenHash: accessToken });
+    const headers = { authorization: `Bearer ${accessToken}` };
+    expect((await app.inject({ method: "GET", url: "/api/v1/auth/me", headers })).json()).toMatchObject({ id, role: "PASSENGER" });
+    expect((await app.inject({ method: "GET", url: "/api/v1/bookings", headers })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/api/v1/driver/overview", headers })).statusCode).toBe(403);
+    expect((await app.inject({ method: "GET", url: "/api/v1/admin/audit", headers })).statusCode).toBe(403);
+    const driverLogin = await app.inject({ method: "POST", url: "/api/v1/auth/native/login", payload: { email: driverEmail, password } });
+    expect(driverLogin.statusCode).toBe(200);
+    const driverHeaders = { authorization: `Bearer ${driverLogin.json().accessToken}` };
+    expect((await app.inject({ method: "GET", url: "/api/v1/bookings", headers: driverHeaders })).statusCode).toBe(403);
+    expect((await app.inject({ method: "GET", url: "/api/v1/driver/overview", headers: driverHeaders })).statusCode).toBe(404);
+    expect((await app.inject({ method: "GET", url: "/api/v1/admin/audit", headers: driverHeaders })).statusCode).toBe(403);
+    expect((await app.inject({ method: "POST", url: "/api/v1/auth/logout", headers })).statusCode).toBe(204);
+    expect((await app.inject({ method: "GET", url: "/api/v1/bookings", headers })).statusCode).toBe(401);
+  });
+
   it("rejects real-looking email addresses and disables public registration outside test mode", async () => {
     const invalidEmail = await app.inject({
       method: "POST", url: "/api/v1/auth/register",

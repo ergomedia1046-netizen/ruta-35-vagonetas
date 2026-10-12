@@ -38,7 +38,9 @@ const configureAuth: FastifyPluginAsync = async (app) => {
   });
 
   app.addHook("preHandler", async (request: FastifyRequest) => {
-    const token = request.cookies[COOKIE];
+    const authorization = request.headers.authorization;
+    const bearer = authorization?.match(/^Bearer ([A-Za-z0-9_-]{32,})$/)?.[1];
+    const token = bearer ?? request.cookies[COOKIE];
     if (!token) return;
     const session = await prisma.session.findUnique({
       where: { tokenHash: hashToken(token) },
@@ -69,8 +71,28 @@ const configureAuth: FastifyPluginAsync = async (app) => {
     return { id: user.id, role: user.role };
   });
 
+  // Native clients use an explicitly separate endpoint because React Native does
+  // not provide reliable HttpOnly cookie persistence across Android versions.
+  app.post("/api/v1/auth/native/login", {
+    config: { rateLimit: { max: 5, timeWindow: "1 minute" } }
+  }, async (request, reply) => {
+    const input = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(200) }).safeParse(request.body);
+    if (!input.success) return reply.code(400).send({ error: "invalid_request" });
+    const email = input.data.email.trim().toLowerCase();
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user || !user.active || !(await argon2.verify(user.passwordHash, input.data.password)))
+      return reply.code(401).send({ error: "invalid_credentials" });
+
+    const token = randomBytes(32).toString("base64url");
+    const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000);
+    await prisma.session.create({ data: { tokenHash: hashToken(token), userId: user.id, expiresAt } });
+    reply.header("Cache-Control", "no-store");
+    return { id: user.id, role: user.role, accessToken: token, expiresAt: expiresAt.toISOString() };
+  });
+
   app.post("/api/v1/auth/logout", async (request, reply) => {
-    const token = request.cookies[COOKIE];
+    const bearer = request.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{32,})$/)?.[1];
+    const token = bearer ?? request.cookies[COOKIE];
     if (token) await prisma.session.deleteMany({ where: { tokenHash: hashToken(token) } });
     reply.clearCookie(COOKIE, { path: "/" });
     return reply.code(204).send();
