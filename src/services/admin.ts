@@ -29,7 +29,7 @@ export async function createVehicle(db: PrismaClient, actorId: string, plate: st
 export async function queueVehicle(db: PrismaClient, actorId: string, vehicleId: string, direction: "YACUIBA_TO_VILLAMONTES" | "VILLAMONTES_TO_YACUIBA") {
   return db.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "Vehicle" WHERE id = ${vehicleId} FOR UPDATE`;
-    await tx.$queryRaw`SELECT "direction" FROM "QueueDirectionLock" WHERE "direction" = ${direction} FOR UPDATE`;
+    await tx.$queryRaw`SELECT "direction" FROM "QueueDirectionLock" WHERE "direction" = CAST(${direction} AS "Direction") FOR UPDATE`;
     const active = await tx.queueEntry.findFirst({ where: { vehicleId, active: true } });
     if (active) throw new Error("vehicle is already queued");
     const last = await tx.queueEntry.findFirst({
