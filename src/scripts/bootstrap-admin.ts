@@ -14,15 +14,22 @@ try {
       password: z.string().min(14).max(200)
     }).safeParse({ email, password });
     if (!input.success) throw new Error("Set a valid RUTA35_BOOTSTRAP_EMAIL and a RUTA35_BOOTSTRAP_PASSWORD of at least 14 characters.");
-    const count = await prisma.user.count();
-    if (count === 0) {
+    const adminCount = await prisma.user.count({ where: { role: "ADMIN" } });
+    if (adminCount > 0) {
+      console.log("Admin bootstrap skipped; an administrator already exists.");
+    } else {
+      const existingUser = await prisma.user.findUnique({
+        where: { email: input.data.email },
+        select: { role: true }
+      });
+      if (existingUser) {
+        throw new Error("Bootstrap email is already assigned to a non-admin account; choose another test-only email.");
+      }
       const passwordHash = await argon2.hash(input.data.password, { type: argon2.argon2id });
       await prisma.user.create({
         data: { email: input.data.email, passwordHash, role: "ADMIN" }
       });
       console.log("Initial Ruta 35 administrator created.");
-    } else {
-      console.log("Admin bootstrap skipped; the user table is already initialized.");
     }
   }
 } catch (error) {
