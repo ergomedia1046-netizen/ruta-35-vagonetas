@@ -98,7 +98,11 @@ export async function assignBookingManuallyForTest(db: PrismaClient, args: { boo
         if (error instanceof Error && error.message === "earlier confirmed booking has priority") throw error;
       }
     }
-    const queueForDirection = await tx.queueEntry.findMany({ where: { active: true, direction: booking.direction }, orderBy: [{ arrivedAt: "asc" }, { position: "asc" }], select: { vehicleId: true } });
+    const queueForDirection = await tx.queueEntry.findMany({
+      where: { active: true, direction: booking.direction, vehicle: { status: "QUEUED", capacity: 7,
+        shifts: { some: { startsAt: { lte: now }, OR: [{ endsAt: null }, { endsAt: { gt: now } }], user: { active: true, role: "DRIVER" } } } } },
+      orderBy: [{ arrivedAt: "asc" }, { position: "asc" }], select: { vehicleId: true }
+    });
     let firstFeasibleVehicle: string | null = null;
     for (const entry of queueForDirection) {
       const assigned = await tx.assignment.findMany({ where: { vehicleId: entry.vehicleId, booking: { status: { in: ["ASSIGNED", "CONFIRMED"] } } }, include: { booking: { select: { passengers: true, direction: true } } } });

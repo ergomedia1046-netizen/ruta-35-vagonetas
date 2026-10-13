@@ -63,7 +63,7 @@ app.get("/api/v1/admin/bookings/pending", { preHandler: requireRole("ADMIN") }, 
 });
 app.get("/api/v1/admin/dashboard", { preHandler: requireRole("ADMIN") }, async () => {
   const now = new Date();
-  const [bookings, vehicles, queues] = await Promise.all([
+  const [bookings, vehicles, queues, drivers] = await Promise.all([
     prisma.booking.findMany({
       where: { status: { in: ["PENDING", "CONFIRMED", "ASSIGNED"] } },
       select: { id: true, direction: true, origin: true, destination: true, pickupPoint: true,
@@ -80,7 +80,13 @@ app.get("/api/v1/admin/dashboard", { preHandler: requireRole("ADMIN") }, async (
     }),
     prisma.queueEntry.findMany({ where: { active: true }, orderBy: [{ direction: "asc" }, { arrivedAt: "asc" }, { position: "asc" }],
       select: { direction: true, position: true, arrivedAt: true, vehicle: { select: { id: true, plate: true, status: true,
-        shifts: { where: { OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }] }, select: { user: { select: { id: true, email: true } } }, take: 1 } } } } })
+        shifts: { where: { OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }] }, select: { user: { select: { id: true, email: true } } }, take: 1 } } } } }),
+    prisma.user.findMany({ where: { role: "DRIVER" }, orderBy: { createdAt: "desc" }, take: 500,
+      select: { id: true, email: true, active: true, createdAt: true, driverPresence: { select: { lastSeenAt: true } },
+        shifts: { where: { startsAt: { lte: now }, OR: [{ endsAt: null }, { endsAt: { gt: now } }] }, orderBy: { startsAt: "desc" }, take: 1,
+          select: { id: true, startsAt: true, vehicle: { select: { id: true, plate: true, capacity: true, status: true,
+            queueEntries: { where: { active: true }, select: { direction: true, position: true }, take: 1 },
+            assignments: { where: { booking: { status: { in: ["ASSIGNED", "CONFIRMED"] } } }, select: { booking: { select: { passengers: true } } } } } } } } })
   ]);
   const fleet = vehicles.map(v => {
     const lastSeenAt = v.shifts[0]?.user.driverPresence?.lastSeenAt ?? null;
@@ -89,7 +95,18 @@ app.get("/api/v1/admin/dashboard", { preHandler: requireRole("ADMIN") }, async (
       connectedRecently: !!lastSeenAt && now.getTime() - lastSeenAt.getTime() >= 0 && now.getTime() - lastSeenAt.getTime() <= PRESENCE_TTL_MS,
       available: !!v.shifts[0]?.user.active && v.shifts[0]?.user.role === "DRIVER" && v.status === "QUEUED" && v.capacity === 7 && occupiedSeats < v.capacity && !!v.queueEntries[0] };
   });
-  return { bookings, vehicles: fleet, queues, manualDispatchEnabled: manualTestDispatchEnabled() };
+  const driverRoster = drivers.map(driver => {
+    const lastSeenAt = driver.driverPresence?.lastSeenAt ?? null;
+    const shift = driver.shifts[0];
+    const vehicle = shift?.vehicle;
+    const occupiedSeats = vehicle?.assignments.reduce((n, a) => n + a.booking.passengers, 0) ?? 0;
+    return { id: driver.id, email: driver.email, active: driver.active, createdAt: driver.createdAt, lastSeenAt,
+      connectedRecently: !!lastSeenAt && now.getTime() - lastSeenAt.getTime() >= 0 && now.getTime() - lastSeenAt.getTime() <= PRESENCE_TTL_MS,
+      shiftActive: !!shift, vehicle: vehicle ? { id: vehicle.id, plate: vehicle.plate, status: vehicle.status, capacity: vehicle.capacity,
+        occupiedSeats, freeSeats: Math.max(0, vehicle.capacity - occupiedSeats), queue: vehicle.queueEntries[0] ?? null } : null,
+      available: driver.active && !!vehicle && vehicle.status === "QUEUED" && vehicle.capacity === 7 && occupiedSeats < vehicle.capacity && !!vehicle.queueEntries[0] };
+  });
+  return { bookings, vehicles: fleet, queues, drivers: driverRoster, manualDispatchEnabled: manualTestDispatchEnabled() };
 });
 
 app.post("/api/v1/driver/presence", { preHandler: requireRole("DRIVER") }, async (request, reply) => {
