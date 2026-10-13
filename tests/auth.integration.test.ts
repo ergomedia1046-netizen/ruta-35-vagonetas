@@ -62,6 +62,7 @@ suite("test-only passenger registration and secure session", () => {
     for (const url of ["/api/v1/admin/audit", "/api/v1/driver/overview"]) {
       expect((await app.inject({ method: "GET", url, headers })).statusCode).toBe(403);
     }
+    expect((await app.inject({ method: "GET", url: "/api/v1/admin/dashboard", headers })).statusCode).toBe(403);
     expect((await app.inject({ method: "GET", url: "/api/v1/bookings" })).statusCode).toBe(401);
     expect((await app.inject({ method: "POST", url: "/api/v1/auth/logout", headers })).statusCode).toBe(204);
     expect((await app.inject({ method: "GET", url: "/api/v1/bookings", headers })).statusCode).toBe(401);
@@ -114,6 +115,7 @@ suite("test-only passenger registration and secure session", () => {
     expect((await app.inject({ method: "GET", url: "/api/v1/bookings", headers: driverHeaders })).statusCode).toBe(403);
     expect((await app.inject({ method: "GET", url: "/api/v1/driver/overview", headers: driverHeaders })).statusCode).toBe(404);
     expect((await app.inject({ method: "GET", url: "/api/v1/admin/audit", headers: driverHeaders })).statusCode).toBe(403);
+    expect((await app.inject({ method: "GET", url: "/api/v1/admin/dashboard", headers: driverHeaders })).statusCode).toBe(403);
     expect((await app.inject({ method: "POST", url: "/api/v1/auth/logout", headers })).statusCode).toBe(204);
     expect((await app.inject({ method: "GET", url: "/api/v1/bookings", headers })).statusCode).toBe(401);
   });
