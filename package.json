@@ -13,7 +13,8 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "start": "node dist/src/server.js",
-    "bootstrap:admin": "node dist/src/scripts/bootstrap-admin.js"
+    "bootstrap:admin": "node dist/src/scripts/bootstrap-admin.js",
+    "seed:test-users": "node dist/src/scripts/seed-test-users.js"
   },
   "dependencies": {
     "@prisma/client": "6.12.0",
@@ -32,3 +33,4 @@
     "vitest": "5.0.3"
   }
 }
+
