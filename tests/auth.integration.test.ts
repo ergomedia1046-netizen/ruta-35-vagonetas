@@ -118,6 +118,14 @@ suite("test-only passenger registration and secure session", () => {
     expect((await app.inject({ method: "GET", url: "/api/v1/bookings", headers })).statusCode).toBe(401);
   });
 
+  it("serves public config despite a stale token while protected routes still reject it", async () => {
+    const stale = { authorization: `Bearer ${"x".repeat(43)}` };
+    const config = await app.inject({ method: "GET", url: "/api/v1/config", headers: stale });
+    expect(config.statusCode).toBe(200);
+    expect(config.json()).toMatchObject({ testMode: true });
+    expect((await app.inject({ method: "GET", url: "/api/v1/bookings", headers: stale })).statusCode).toBe(401);
+  });
+
   it("rejects real-looking email addresses and disables public registration outside test mode", async () => {
     const invalidEmail = await app.inject({
       method: "POST", url: "/api/v1/auth/register",

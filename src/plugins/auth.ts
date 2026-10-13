@@ -12,6 +12,12 @@ declare module "fastify" {
 }
 const COOKIE = "ruta35_session";
 const hashToken = (token: string) => createHmac("sha256", process.env.SESSION_SECRET!).update(token).digest("hex");
+// Public routes must not consult the session table just because a client sends
+// an old bearer token or cookie. Protected routes continue through the lookup.
+const PUBLIC_SESSION_ROUTES = new Set([
+  "GET /", "GET /api/v1/config", "GET /health", "GET /api/v1/quote",
+  "POST /api/v1/auth/register", "POST /api/v1/auth/login", "POST /api/v1/auth/native/login"
+]);
 
 const configureAuth: FastifyPluginAsync = async (app) => {
   await app.register(cookie);
@@ -38,6 +44,8 @@ const configureAuth: FastifyPluginAsync = async (app) => {
   });
 
   app.addHook("preHandler", async (request: FastifyRequest) => {
+    const routeKey = `${request.method} ${request.routeOptions.url ?? request.url.split("?")[0]}`;
+    if (PUBLIC_SESSION_ROUTES.has(routeKey)) return;
     const authorization = request.headers.authorization;
     const bearer = authorization?.match(/^Bearer ([A-Za-z0-9_-]{32,})$/)?.[1];
     const token = bearer ?? request.cookies[COOKIE];

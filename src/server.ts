@@ -60,6 +60,27 @@ app.get("/api/v1/admin/bookings/pending", { preHandler: requireRole("ADMIN") }, 
     orderBy: { createdAt: "asc" }, take: 100
   });
 });
+app.get("/api/v1/admin/dashboard", { preHandler: requireRole("ADMIN") }, async () => {
+  const [bookings, vehicles, queues] = await Promise.all([
+    prisma.booking.findMany({
+      where: { status: { in: ["PENDING", "CONFIRMED", "ASSIGNED"] } },
+      select: { id: true, direction: true, origin: true, destination: true, pickupPoint: true,
+        passengers: true, kind: true, totalBs: true, status: true, createdAt: true, confirmedAt: true,
+        passenger: { select: { email: true } }, assignment: { select: { vehicle: { select: { id: true, plate: true } } } } },
+      orderBy: { createdAt: "asc" }, take: 300
+    }),
+    prisma.vehicle.findMany({
+      select: { id: true, plate: true, capacity: true, status: true,
+        shifts: { where: { OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }] },
+          select: { id: true, startsAt: true, user: { select: { id: true, email: true, active: true } } }, take: 1 },
+        queueEntries: { where: { active: true }, select: { id: true, direction: true, position: true, arrivedAt: true }, take: 1 } }
+    }),
+    prisma.queueEntry.findMany({ where: { active: true }, orderBy: [{ direction: "asc" }, { arrivedAt: "asc" }, { position: "asc" }],
+      select: { direction: true, position: true, arrivedAt: true, vehicle: { select: { id: true, plate: true, status: true,
+        shifts: { where: { OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }] }, select: { user: { select: { id: true, email: true } } }, take: 1 } } } } })
+  ]);
+  return { bookings, vehicles, queues };
+});
 app.get("/api/v1/admin/payments/pending-qr", { preHandler: requireRole("ADMIN") }, async () => {
   return prisma.paymentPart.findMany({
     where: { kind: "QR", status: "PENDING" },
@@ -103,11 +124,12 @@ app.post("/api/v1/admin/shifts", { preHandler: requireRole("ADMIN") }, async (re
 app.get("/api/v1/driver/overview", { preHandler: requireRole("DRIVER") }, async (request, reply) => {
   const shift = await getActiveShift(prisma, request.authUser!.id);
   if (!shift) return reply.code(404).send({ error: "no_active_shift" });
-  const [bookings, requests] = await Promise.all([
+  const [bookings, requests, queueEntry] = await Promise.all([
     listDriverBookings(prisma, request.authUser!.id),
-    listCompatibleRequests(prisma, request.authUser!.id)
+    listCompatibleRequests(prisma, request.authUser!.id),
+    prisma.queueEntry.findFirst({ where: { vehicleId: shift.vehicleId, active: true }, select: { direction: true, position: true, arrivedAt: true } })
   ]);
-  return { vehicle: shift.vehicle, bookings, requests, warning: "Realiza operaciones solo con el vehículo detenido." };
+  return { vehicle: shift.vehicle, queue: queueEntry, bookings, requests, warning: "Realiza operaciones solo con el vehículo detenido." };
 });
 app.post("/api/v1/driver/vehicles/:id/status", { preHandler: requireRole("DRIVER", "ADMIN") }, async (request, reply) => {
   const params = z.object({ id: z.string().min(1) }).safeParse(request.params);
