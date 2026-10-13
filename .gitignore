@@ -5,3 +5,13 @@ dist/
 !.env.example
 coverage/
 *.log
+.expo/
+apps/*/android/
+apps/*/ios/
+apps/*/dist/
+apps/*/node_modules/
+.pnpm-store/
+.pnpm-home/
+.pnpm-config/
+.cache/
+.config/

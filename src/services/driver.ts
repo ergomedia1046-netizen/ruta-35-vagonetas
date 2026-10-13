@@ -14,6 +14,25 @@ export async function listDriverBookings(db: PrismaClient, userId: string) {
   if (!shift) throw new Error("no active shift");
   return db.assignment.findMany({
     where: { vehicleId: shift.vehicleId, booking: { status: { in: ["ASSIGNED", "CONFIRMED"] } } },
+    include: { booking: { include: { payment: { include: { parts: true } } } }, trip: { include: { events: { orderBy: { createdAt: "asc" } } } } },
+    orderBy: { assignedAt: "asc" }
+  });
+}
+
+export async function getDriverCurrentTrip(db: PrismaClient, userId: string) {
+  const shift = await getActiveShift(db, userId);
+  if (!shift) throw new Error("no active shift");
+  return db.trip.findFirst({
+    where: { vehicleId: shift.vehicleId }, orderBy: { createdAt: "desc" },
+    include: { events: { orderBy: { createdAt: "asc" } }, assignments: { include: { booking: { include: { payment: { include: { parts: true } } } } } } }
+  });
+}
+
+export async function listDriverPendingPayments(db: PrismaClient, userId: string) {
+  const shift = await getActiveShift(db, userId);
+  if (!shift) throw new Error("no active shift");
+  return db.assignment.findMany({
+    where: { vehicleId: shift.vehicleId, booking: { status: "COMPLETED", payment: { parts: { some: { status: "PENDING" } } } } },
     include: { booking: { include: { payment: { include: { parts: true } } } } },
     orderBy: { assignedAt: "asc" }
   });
@@ -58,8 +77,12 @@ export async function updateVehicleStatus(db: PrismaClient, vehicleId: string, a
       });
       if (!shift) throw new Error("driver is not assigned to this vehicle");
     }
+    await tx.$queryRaw`SELECT id FROM "Vehicle" WHERE id = ${vehicleId} FOR UPDATE`;
     const vehicle = await tx.vehicle.findUnique({ where: { id: vehicleId } });
     if (!vehicle) throw new Error("vehicle not found");
+    if (vehicle.status === status) throw new Error("vehicle status is already set");
+    if (await tx.trip.findFirst({ where: { vehicleId, status: { in: ["ASSIGNED", "TO_PICKUP", "PICKED_UP", "IN_TRANSIT", "ARRIVED"] } } }))
+      throw new Error("vehicle status is controlled by its active trip");
     if (actor.role !== "ADMIN") {
       const allowed = (vehicle.status === "QUEUED" && status === "ON_TRIP")
         || (vehicle.status === "ON_TRIP" && status === "AVAILABLE");

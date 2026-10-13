@@ -58,7 +58,16 @@ export async function createBooking(db: PrismaClient, args: {
 
 export async function listPassengerBookings(db: PrismaClient, passengerId: string) {
   return db.booking.findMany({
-    where: { passengerId }, include: { assignment: { include: { vehicle: { select: { plate: true } } } }, payment: { include: { parts: true } } },
+    where: { passengerId },
+    include: {
+      assignment: {
+        include: {
+          vehicle: { select: { plate: true } },
+          trip: { include: { events: { where: { action: { not: "JOIN_DESTINATION_QUEUE" } }, orderBy: { createdAt: "asc" } } } }
+        }
+      },
+      payment: { include: { parts: true } }
+    },
     orderBy: { createdAt: "desc" }, take: 100
   });
 }

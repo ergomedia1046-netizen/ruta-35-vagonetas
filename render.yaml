@@ -1,34 +1,27 @@
 services:
   - type: web
-    name: ruta35-pruebas
+    name: ruta35-android-pruebas
     runtime: node
     plan: free
     region: virginia
     buildCommand: npm ci --include=dev && npm run db:generate && npm run build
     startCommand: npm run db:migrate && npm run bootstrap:admin && npm run start
     healthCheckPath: /health
-    autoDeploy: true
+    autoDeploy: false
     envVars:
       - key: NODE_ENV
         value: production
       - key: RUTA35_TEST_MODE
         value: "true"
+      - key: RUTA35_TEST_TARGET
+        value: ruta35-android-pruebas
+      - key: RUTA35_TEST_MANUAL_DISPATCH
+        value: "true"
       - key: SESSION_SECRET
         generateValue: true
       - key: DATABASE_URL
-        fromDatabase:
-          name: ruta35-pruebas-db
-          property: connectionString
+        sync: false
       - key: RUTA35_BOOTSTRAP_EMAIL
         sync: false
       - key: RUTA35_BOOTSTRAP_PASSWORD
         sync: false
-
-databases:
-  - name: ruta35-pruebas-db
-    databaseName: ruta35
-    user: ruta35
-    plan: free
-    region: virginia
-    postgresMajorVersion: "16"
-    ipAllowList: []

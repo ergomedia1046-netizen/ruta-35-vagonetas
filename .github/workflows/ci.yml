@@ -32,9 +32,27 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
+      - run: npx --yes --package yarn@1.22.22 yarn --cwd apps/passenger install --non-interactive
+      - run: npx --yes --package yarn@1.22.22 yarn --cwd apps/driver install --non-interactive
       - run: npm run db:generate
       - run: npm run db:migrate
       - run: npm run typecheck
       - run: npm test
+      - run: yarn typecheck
+        working-directory: apps/passenger
+      - run: yarn typecheck
+        working-directory: apps/driver
+      - run: npx --yes expo-doctor
+        working-directory: apps/passenger
+      - run: npx --yes expo-doctor
+        working-directory: apps/driver
+      - run: npx expo export --platform android --output-dir dist
+        working-directory: apps/passenger
+        env:
+          EXPO_PUBLIC_API_BASE_URL: https://example.test
+      - run: npx expo export --platform android --output-dir dist
+        working-directory: apps/driver
+        env:
+          EXPO_PUBLIC_API_BASE_URL: https://example.test
       - run: npm run build
       - run: npm audit

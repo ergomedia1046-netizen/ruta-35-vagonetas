@@ -34,16 +34,23 @@ async function refreshPaymentStatus(tx: Prisma.TransactionClient, paymentId: str
 
 export async function recordCashReceived(db: PrismaClient, paymentId: string, actorId: string) {
   return db.$transaction(async (tx) => {
+    // Serialize receipts and QR reviews for the same payment, including retries.
+    await tx.$queryRaw`SELECT id FROM "Payment" WHERE id = ${paymentId} FOR UPDATE`;
     const part = await tx.paymentPart.findFirst({ where: { paymentId, kind: "CASH" }, include: { payment: { include: { booking: { include: { assignment: true } } } } } });
-    if (!part || part.status !== "PENDING") throw new Error("cash part is unavailable");
+    if (!part) throw new Error("cash part is unavailable");
     const actor = await tx.user.findUnique({ where: { id: actorId } });
     if (!actor || !actor.active) throw new Error("active account required");
     const vehicleId = part.payment.booking.assignment?.vehicleId;
     if (actor.role !== "ADMIN") {
-      const shift = vehicleId ? await tx.driverShift.findFirst({ where: { userId: actorId, vehicleId, OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }] } }) : null;
+      if (actor.role !== "DRIVER") throw new Error("driver or admin account required");
+      const now = new Date();
+      const shift = vehicleId ? await tx.driverShift.findFirst({ where: { userId: actorId, vehicleId, startsAt: { lte: now }, OR: [{ endsAt: null }, { endsAt: { gt: now } }] } }) : null;
       if (!shift) throw new Error("driver is not assigned to this booking");
     }
+    if (part.status === "RECEIVED") return part;
+    if (part.status !== "PENDING") throw new Error("cash part is unavailable");
     const updated = await tx.paymentPart.update({ where: { id: part.id }, data: { status: "RECEIVED" } });
+    await refreshPaymentStatus(tx, paymentId);
     await tx.auditEvent.create({ data: {
       actorId, action: "CASH_RECEIVED", entityType: "PaymentPart", entityId: part.id,
       details: { paymentId, amountBs: part.amountBs }
@@ -54,11 +61,13 @@ export async function recordCashReceived(db: PrismaClient, paymentId: string, ac
 
 export async function verifyQrManually(db: PrismaClient, paymentId: string, partId: string, adminId: string, verified: boolean) {
   return db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "Payment" WHERE id = ${paymentId} FOR UPDATE`;
     const part = await tx.paymentPart.findFirst({ where: { id: partId, paymentId, kind: "QR" } });
     if (!part || part.status !== "PENDING") throw new Error("QR part is unavailable for review");
     const updated = await tx.paymentPart.update({ where: { id: partId }, data: {
       status: verified ? "VERIFIED" : "REJECTED", verifiedBy: adminId, verifiedAt: new Date()
     }});
+    await refreshPaymentStatus(tx, paymentId);
     await tx.auditEvent.create({ data: {
       actorId: adminId, action: verified ? "QR_MANUALLY_VERIFIED" : "QR_MANUALLY_REJECTED",
       entityType: "PaymentPart", entityId: partId,

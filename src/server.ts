@@ -10,9 +10,11 @@ import { confirmBooking } from "./services/booking-admin.js";
 import { assignBooking } from "./services/dispatch.js";
 import { recordCashReceived, verifyQrManually } from "./services/payments.js";
 import { createUser, createVehicle, createDriverShift, queueVehicle } from "./services/admin.js";
-import { getActiveShift, listCompatibleRequests, listDriverBookings, updateVehicleStatus } from "./services/driver.js";
+import { getActiveShift, getDriverCurrentTrip, listCompatibleRequests, listDriverBookings, listDriverPendingPayments, updateVehicleStatus } from "./services/driver.js";
 import argon2 from "argon2";
 import { correctIncident, listIncidents, reportCombinedIncident, restrictCombinedPayment, reviewIncident } from "./services/incidents.js";
+import { assignBookingManuallyForTest, heartbeatDriver, listManualDispatchCandidates, manualTestDispatchEnabled, PRESENCE_TTL_MS } from "./services/test-dispatch.js";
+import { applyTripAction, joinDestinationQueue } from "./services/trips.js";
 
 if (!process.env.SESSION_SECRET || Buffer.byteLength(process.env.SESSION_SECRET) < 32) {
   throw new Error("SESSION_SECRET must contain at least 32 bytes");
@@ -21,7 +23,7 @@ if (!process.env.SESSION_SECRET || Buffer.byteLength(process.env.SESSION_SECRET)
 const app = Fastify({ logger: { redact: ["req.headers.authorization", "req.headers.cookie"] } });
 await app.register(fastifyStatic, { root: join(process.cwd(), "public"), prefix: "/" });
 await app.register(authPlugin);
-app.get("/api/v1/config", async () => ({ testMode: process.env.RUTA35_TEST_MODE === "true" }));
+app.get("/api/v1/config", async () => ({ testMode: process.env.RUTA35_TEST_MODE === "true", manualDispatchEnabled: manualTestDispatchEnabled() }));
 app.get("/health", async () => ({ status: "ok", service: "ruta-35-api" }));
 
 app.post("/api/v1/driver/incidents", { preHandler: requireRole("DRIVER") }, async (request, reply) => {
@@ -59,6 +61,93 @@ app.get("/api/v1/admin/bookings/pending", { preHandler: requireRole("ADMIN") }, 
       passengers: true, kind: true, totalBs: true, paymentMethod: true, createdAt: true },
     orderBy: { createdAt: "asc" }, take: 100
   });
+});
+app.get("/api/v1/admin/dashboard", { preHandler: requireRole("ADMIN") }, async () => {
+  const now = new Date();
+  const [bookings, vehicles, queues, drivers] = await Promise.all([
+    prisma.booking.findMany({
+      where: { status: { in: ["PENDING", "CONFIRMED", "ASSIGNED"] } },
+      select: { id: true, direction: true, origin: true, destination: true, pickupPoint: true,
+        passengers: true, kind: true, totalBs: true, status: true, createdAt: true, confirmedAt: true,
+        passenger: { select: { email: true } }, assignment: { select: { vehicle: { select: { id: true, plate: true } } } } },
+      orderBy: { createdAt: "asc" }, take: 300
+    }),
+    prisma.vehicle.findMany({
+      select: { id: true, plate: true, capacity: true, status: true,
+        shifts: { where: { startsAt: { lte: now }, OR: [{ endsAt: null }, { endsAt: { gt: now } }] },
+          select: { id: true, startsAt: true, user: { select: { id: true, email: true, role: true, active: true, driverPresence: { select: { lastSeenAt: true } } } } }, take: 1 },
+        assignments: { where: { booking: { status: { in: ["ASSIGNED", "CONFIRMED"] } } }, select: { booking: { select: { passengers: true } } } },
+        queueEntries: { where: { active: true }, select: { id: true, direction: true, position: true, arrivedAt: true }, take: 1 } }
+    }),
+    prisma.queueEntry.findMany({ where: { active: true }, orderBy: [{ direction: "asc" }, { arrivedAt: "asc" }, { position: "asc" }],
+      select: { direction: true, position: true, arrivedAt: true, vehicle: { select: { id: true, plate: true, status: true,
+        shifts: { where: { OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }] }, select: { user: { select: { id: true, email: true } } }, take: 1 } } } } }),
+    prisma.user.findMany({
+      where: { role: "DRIVER" }, orderBy: { createdAt: "desc" }, take: 500,
+      select: {
+        id: true, email: true, active: true, createdAt: true,
+        driverPresence: { select: { lastSeenAt: true } },
+        shifts: {
+          where: { startsAt: { lte: now }, OR: [{ endsAt: null }, { endsAt: { gt: now } }] },
+          orderBy: { startsAt: "desc" }, take: 1,
+          select: {
+            id: true, startsAt: true,
+            vehicle: {
+              select: {
+                id: true, plate: true, capacity: true, status: true,
+                queueEntries: { where: { active: true }, select: { direction: true, position: true }, take: 1 },
+                assignments: {
+                  where: { booking: { status: { in: ["ASSIGNED", "CONFIRMED"] } } },
+                  select: { booking: { select: { passengers: true } } }
+                }
+              }
+            }
+          }
+        }
+      }
+    })
+  ]);
+  const fleet = vehicles.map(v => {
+    const lastSeenAt = v.shifts[0]?.user.driverPresence?.lastSeenAt ?? null;
+    const occupiedSeats = v.assignments.reduce((n, a) => n + a.booking.passengers, 0);
+    return { ...v, occupiedSeats, freeSeats: Math.max(0, v.capacity - occupiedSeats), lastSeenAt,
+      connectedRecently: !!lastSeenAt && now.getTime() - lastSeenAt.getTime() >= 0 && now.getTime() - lastSeenAt.getTime() <= PRESENCE_TTL_MS,
+      available: !!v.shifts[0]?.user.active && v.shifts[0]?.user.role === "DRIVER" && v.status === "QUEUED" && v.capacity === 7 && occupiedSeats < v.capacity && !!v.queueEntries[0] };
+  });
+  const driverRoster = drivers.map(driver => {
+    const lastSeenAt = driver.driverPresence?.lastSeenAt ?? null;
+    const shift = driver.shifts[0];
+    const vehicle = shift?.vehicle;
+    const occupiedSeats = vehicle?.assignments.reduce((n, a) => n + a.booking.passengers, 0) ?? 0;
+    return { id: driver.id, email: driver.email, active: driver.active, createdAt: driver.createdAt, lastSeenAt,
+      connectedRecently: !!lastSeenAt && now.getTime() - lastSeenAt.getTime() >= 0 && now.getTime() - lastSeenAt.getTime() <= PRESENCE_TTL_MS,
+      shiftActive: !!shift, vehicle: vehicle ? { id: vehicle.id, plate: vehicle.plate, status: vehicle.status, capacity: vehicle.capacity,
+        occupiedSeats, freeSeats: Math.max(0, vehicle.capacity - occupiedSeats), queue: vehicle.queueEntries[0] ?? null } : null,
+      available: driver.active && !!vehicle && vehicle.status === "QUEUED" && vehicle.capacity === 7 && occupiedSeats < vehicle.capacity && !!vehicle.queueEntries[0] };
+  });
+  return { bookings, vehicles: fleet, queues, drivers: driverRoster, manualDispatchEnabled: manualTestDispatchEnabled() };
+});
+
+app.post("/api/v1/driver/presence", { preHandler: requireRole("DRIVER") }, async (request, reply) => {
+  if (process.env.RUTA35_TEST_MODE !== "true" || process.env.RUTA35_TEST_TARGET !== "ruta35-android-pruebas") return reply.code(404).send({ error: "not_found" });
+  try { const presence = await heartbeatDriver(prisma, request.authUser!.id); return { lastSeenAt: presence.lastSeenAt }; }
+  catch { return reply.code(409).send({ error: "active_driver_shift_required" }); }
+});
+
+app.get("/api/v1/admin/test-dispatch/:bookingId/candidates", { preHandler: requireRole("ADMIN") }, async (request, reply) => {
+  if (!manualTestDispatchEnabled()) return reply.code(404).send({ error: "not_found" });
+  const params = z.object({ bookingId: z.string().min(1) }).safeParse(request.params);
+  if (!params.success) return reply.code(400).send({ error: "invalid_request" });
+  try { return await listManualDispatchCandidates(prisma, params.data.bookingId); }
+  catch { return reply.code(409).send({ error: "booking_not_dispatchable" }); }
+});
+app.post("/api/v1/admin/test-dispatch/:bookingId/assign", { preHandler: requireRole("ADMIN") }, async (request, reply) => {
+  if (!manualTestDispatchEnabled()) return reply.code(404).send({ error: "not_found" });
+  const params = z.object({ bookingId: z.string().min(1) }).safeParse(request.params);
+  const body = z.object({ vehicleId: z.string().min(1), justification: z.string().trim().min(8).max(500) }).safeParse(request.body);
+  if (!params.success || !body.success) return reply.code(400).send({ error: "vehicle_and_test_justification_required" });
+  try { return reply.code(200).send(await assignBookingManuallyForTest(prisma, { bookingId: params.data.bookingId, vehicleId: body.data.vehicleId, justification: body.data.justification, adminId: request.authUser!.id })); }
+  catch { return reply.code(409).send({ error: "manual_test_assignment_not_available" }); }
 });
 app.get("/api/v1/admin/payments/pending-qr", { preHandler: requireRole("ADMIN") }, async () => {
   return prisma.paymentPart.findMany({
@@ -103,18 +192,42 @@ app.post("/api/v1/admin/shifts", { preHandler: requireRole("ADMIN") }, async (re
 app.get("/api/v1/driver/overview", { preHandler: requireRole("DRIVER") }, async (request, reply) => {
   const shift = await getActiveShift(prisma, request.authUser!.id);
   if (!shift) return reply.code(404).send({ error: "no_active_shift" });
-  const [bookings, requests] = await Promise.all([
+  const [bookings, requests, queueEntry, currentTrip, pendingPayments] = await Promise.all([
     listDriverBookings(prisma, request.authUser!.id),
-    listCompatibleRequests(prisma, request.authUser!.id)
+    listCompatibleRequests(prisma, request.authUser!.id),
+    prisma.queueEntry.findFirst({ where: { vehicleId: shift.vehicleId, active: true }, select: { direction: true, position: true, arrivedAt: true } }),
+    getDriverCurrentTrip(prisma, request.authUser!.id),
+    listDriverPendingPayments(prisma, request.authUser!.id)
   ]);
-  return { vehicle: shift.vehicle, bookings, requests, warning: "Realiza operaciones solo con el vehículo detenido." };
+  return { vehicle: shift.vehicle, queue: queueEntry, bookings, requests, currentTrip, pendingPayments, warning: "Realiza operaciones solo con el vehículo detenido." };
 });
-app.post("/api/v1/driver/vehicles/:id/status", { preHandler: requireRole("DRIVER", "ADMIN") }, async (request, reply) => {
+app.post("/api/v1/driver/vehicles/:id/status", { preHandler: requireRole("ADMIN") }, async (request, reply) => {
   const params = z.object({ id: z.string().min(1) }).safeParse(request.params);
   const body = z.object({ status: z.enum(["AVAILABLE", "QUEUED", "ON_TRIP", "INACTIVE"]) }).safeParse(request.body);
   if (!params.success || !body.success) return reply.code(400).send({ error: "invalid_request" });
   try { return await updateVehicleStatus(prisma, params.data.id, request.authUser!.id, body.data.status); }
   catch { return reply.code(403).send({ error: "vehicle_status_change_denied" }); }
+});
+
+app.post("/api/v1/driver/trips/:id/actions", { preHandler: requireRole("DRIVER") }, async (request, reply) => {
+  const params = z.object({ id: z.string().min(1) }).safeParse(request.params);
+  const body = z.object({ action: z.enum(["GO_TO_PICKUP", "CONFIRM_PICKUP", "START_TRIP", "CONFIRM_ARRIVAL", "MARK_AVAILABLE"]),
+    actualPassengers: z.record(z.string(), z.number().int().min(0).max(7)).optional() }).safeParse(request.body);
+  const key = request.headers["idempotency-key"];
+  if (!params.success || !body.success || typeof key !== "string" || key.length < 12 || key.length > 128)
+    return reply.code(400).send({ error: "invalid_request" });
+  try { return await applyTripAction(prisma, request.authUser!.id, params.data.id, body.data.action, key, body.data.actualPassengers); }
+  catch { return reply.code(409).send({ error: "trip_transition_not_available" }); }
+});
+app.post("/api/v1/driver/trips/:id/join-destination-queue", { preHandler: requireRole("DRIVER") }, async (request, reply) => {
+  const params = z.object({ id: z.string().min(1) }).safeParse(request.params);
+  const key = request.headers["idempotency-key"];
+  if (!params.success || typeof key !== "string" || key.length < 12 || key.length > 128) return reply.code(400).send({ error: "invalid_request" });
+  try { return await joinDestinationQueue(prisma, request.authUser!.id, params.data.id, key); }
+  catch (error) {
+    request.log.warn({ reason: error instanceof Error ? error.message : "unknown" }, "destination queue join rejected");
+    return reply.code(409).send({ error: "destination_queue_join_not_available" });
+  }
 });
 
 
