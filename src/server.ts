@@ -223,7 +223,10 @@ app.post("/api/v1/driver/trips/:id/join-destination-queue", { preHandler: requir
   const key = request.headers["idempotency-key"];
   if (!params.success || typeof key !== "string" || key.length < 12 || key.length > 128) return reply.code(400).send({ error: "invalid_request" });
   try { return await joinDestinationQueue(prisma, request.authUser!.id, params.data.id, key); }
-  catch { return reply.code(409).send({ error: "destination_queue_join_not_available" }); }
+  catch (error) {
+    request.log.warn({ reason: error instanceof Error ? error.message : "unknown" }, "destination queue join rejected");
+    return reply.code(409).send({ error: "destination_queue_join_not_available" });
+  }
 });
 
 
