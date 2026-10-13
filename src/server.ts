@@ -81,12 +81,30 @@ app.get("/api/v1/admin/dashboard", { preHandler: requireRole("ADMIN") }, async (
     prisma.queueEntry.findMany({ where: { active: true }, orderBy: [{ direction: "asc" }, { arrivedAt: "asc" }, { position: "asc" }],
       select: { direction: true, position: true, arrivedAt: true, vehicle: { select: { id: true, plate: true, status: true,
         shifts: { where: { OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }] }, select: { user: { select: { id: true, email: true } } }, take: 1 } } } } }),
-    prisma.user.findMany({ where: { role: "DRIVER" }, orderBy: { createdAt: "desc" }, take: 500,
-      select: { id: true, email: true, active: true, createdAt: true, driverPresence: { select: { lastSeenAt: true } },
-        shifts: { where: { startsAt: { lte: now }, OR: [{ endsAt: null }, { endsAt: { gt: now } }] }, orderBy: { startsAt: "desc" }, take: 1,
-          select: { id: true, startsAt: true, vehicle: { select: { id: true, plate: true, capacity: true, status: true,
-            queueEntries: { where: { active: true }, select: { direction: true, position: true }, take: 1 },
-            assignments: { where: { booking: { status: { in: ["ASSIGNED", "CONFIRMED"] } } }, select: { booking: { select: { passengers: true } } } } } } } } })
+    prisma.user.findMany({
+      where: { role: "DRIVER" }, orderBy: { createdAt: "desc" }, take: 500,
+      select: {
+        id: true, email: true, active: true, createdAt: true,
+        driverPresence: { select: { lastSeenAt: true } },
+        shifts: {
+          where: { startsAt: { lte: now }, OR: [{ endsAt: null }, { endsAt: { gt: now } }] },
+          orderBy: { startsAt: "desc" }, take: 1,
+          select: {
+            id: true, startsAt: true,
+            vehicle: {
+              select: {
+                id: true, plate: true, capacity: true, status: true,
+                queueEntries: { where: { active: true }, select: { direction: true, position: true }, take: 1 },
+                assignments: {
+                  where: { booking: { status: { in: ["ASSIGNED", "CONFIRMED"] } } },
+                  select: { booking: { select: { passengers: true } } }
+                }
+              }
+            }
+          }
+        }
+      }
+    })
   ]);
   const fleet = vehicles.map(v => {
     const lastSeenAt = v.shifts[0]?.user.driverPresence?.lastSeenAt ?? null;
