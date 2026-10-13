@@ -1,5 +1,11 @@
 CREATE TYPE "TripStatus" AS ENUM ('ASSIGNED', 'TO_PICKUP', 'PICKED_UP', 'IN_TRANSIT', 'ARRIVED', 'COMPLETED');
 
+CREATE TABLE "QueueDirectionLock" (
+    "direction" "Direction" NOT NULL,
+    CONSTRAINT "QueueDirectionLock_pkey" PRIMARY KEY ("direction")
+);
+INSERT INTO "QueueDirectionLock" ("direction") VALUES ('YACUIBA_TO_VILLAMONTES'), ('VILLAMONTES_TO_YACUIBA');
+
 CREATE TABLE "Trip" (
     "id" TEXT NOT NULL,
     "vehicleId" TEXT NOT NULL,

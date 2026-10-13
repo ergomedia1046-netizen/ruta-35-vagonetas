@@ -111,7 +111,7 @@ export async function joinDestinationQueue(db: PrismaClient, actorId: string, tr
     const trip = await requireDriverTrip(tx, actorId, tripId);
     if (trip.status !== "COMPLETED" || trip.vehicle.status !== "AVAILABLE") throw new Error("vehicle must be available after arrival");
     const destinationDirection: Direction = trip.direction === "YACUIBA_TO_VILLAMONTES" ? "VILLAMONTES_TO_YACUIBA" : "YACUIBA_TO_VILLAMONTES";
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${destinationDirection}))`;
+    await tx.$queryRaw`SELECT "direction" FROM "QueueDirectionLock" WHERE "direction" = ${destinationDirection} FOR UPDATE`;
     const max = await tx.queueEntry.aggregate({ where: { direction: destinationDirection, active: true }, _max: { position: true } });
     const queue = await tx.queueEntry.create({ data: { vehicleId: trip.vehicleId, direction: destinationDirection, position: (max._max.position ?? 0) + 1 } });
     await tx.vehicle.update({ where: { id: trip.vehicleId }, data: { status: "QUEUED" } });

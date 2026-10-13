@@ -140,6 +140,10 @@ model QueueEntry {
   @@index([direction, active, arrivedAt, position])
 }
 
+model QueueDirectionLock {
+  direction Direction @id
+}
+
 model Booking {
   id              String        @id @default(cuid())
   passengerId     String?
