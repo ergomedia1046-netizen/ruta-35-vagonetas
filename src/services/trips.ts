@@ -61,7 +61,7 @@ export async function applyTripAction(db: PrismaClient, actorId: string, tripId:
         let total = 0;
         for (const a of trip.assignments) {
           const count = actualPassengers[a.bookingId];
-          if (!Number.isInteger(count) || count < 0 || count > a.booking.passengers) throw new Error("invalid actual passenger count");
+          if (count === undefined || !Number.isInteger(count) || count < 0 || count > a.booking.passengers) throw new Error("invalid actual passenger count");
           total += count;
           await tx.assignment.update({ where: { bookingId: a.bookingId }, data: { actualPassengers: count } });
         }
