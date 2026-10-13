@@ -52,9 +52,9 @@ button{background:var(--brand);color:white;border:0;font-weight:700;margin-top:1
 <section id="passengerBookingsPanel" class="hidden"><h2>Mis solicitudes</h2><button id="refresh" class="secondary">Actualizar solicitudes</button><div id="result" aria-live="polite"></div></section>
 <section><h2>Información</h2><p>Esta instalación es solo para pruebas y no coordina viajes reales. Las reservas y pagos son registros de simulación. QR significa revisión manual de prueba; no se conecta a bancos ni procesa dinero.</p><p>La vagoneta tiene un máximo de siete pasajeros. El expreso reserva los siete asientos por Bs 245.</p><div id="message" aria-live="polite"></div></section>
 </main>
-<script>
+<script type="module">
+import { api } from "./api-client.js";
 const $=id=>document.getElementById(id);let online=false,logged=false,role=null,vehicleId=null,currentEmail="",manualDispatchEnabled=false;
-async function api(path,options={}){const res=await fetch(path,{...options,credentials:"same-origin",headers:{"content-type":"application/json",...(options.headers||{})}});let data=null;try{data=await res.json()}catch{}if(!res.ok)throw new Error(data?.error||"No se pudo completar la solicitud");return data}
 async function loadConfig(){try{const config=await api("/api/v1/config");manualDispatchEnabled=config.manualDispatchEnabled===true;$("register").classList.toggle("hidden",!config.testMode)}catch{$("register").classList.add("hidden");manualDispatchEnabled=false}}
 function setOnline(value){online=value;$("connection").textContent=value?"Conexión con el servidor disponible":"Sin conexión. Las reservas no se enviarán."; $("connection").classList.toggle("offline",!value);$("submit").disabled=!online||!logged}
 async function health(){try{await api("/health");setOnline(true)}catch{setOnline(false)}}
@@ -90,3 +90,4 @@ $("refreshAdminDashboard").addEventListener("click",loadDispatchBookings);$("ref
 $("refreshDriver").addEventListener("click",loadDriver);$("saveVehicleStatus").addEventListener("click",async()=>{if(!vehicleId)return;try{await api("/api/v1/driver/vehicles/"+vehicleId+"/status",{method:"POST",body:JSON.stringify({status:$("vehicleStatus").value})});await loadDriver()}catch(e){$("message").textContent=e.message}});
 $("refresh").addEventListener("click",list);window.addEventListener("online",health);window.addEventListener("offline",()=>setOnline(false));loadConfig();health();setInterval(health,15000);fare();
 </script></body></html>
+
