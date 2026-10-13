@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { prisma } from "../src/db.js";
 import { assignBooking } from "../src/services/dispatch.js";
 import { createBooking } from "../src/services/bookings.js";
+import { recordCashReceived, verifyQrManually } from "../src/services/payments.js";
 import { correctIncident, reportCombinedIncident, restrictCombinedPayment, reviewIncident } from "../src/services/incidents.js";
 
 const suite = describe.skipIf(!process.env.DATABASE_URL);
@@ -78,6 +79,31 @@ suite("PostgreSQL dispatch and incident integration", () => {
     await assignBooking(prisma, first.id, vehicleId, userId);
     await assignBooking(prisma, second.id, vehicleId, userId);
     await expect(assignBooking(prisma, third.id, vehicleId, userId)).rejects.toThrow();
+  });
+
+  it("serializes combined cash and QR receipts and never duplicates cash audit records", async () => {
+    await setup();
+    const booking = await seedBooking(1, "combined-receipts");
+    await prisma.booking.update({ where: { id: booking.id }, data: { paymentMethod: "COMBINED" } });
+    const payment = await prisma.payment.create({ data: {
+      bookingId: booking.id, method: "COMBINED", totalBs: 35,
+      parts: { create: [{ kind: "CASH", amountBs: 15 }, { kind: "QR", amountBs: 20 }] }
+    }, include: { parts: true } });
+    const cash = payment.parts.find(part => part.kind === "CASH")!;
+    const qr = payment.parts.find(part => part.kind === "QR")!;
+    await Promise.all([
+      recordCashReceived(prisma, payment.id, userId),
+      recordCashReceived(prisma, payment.id, userId),
+      verifyQrManually(prisma, payment.id, qr.id, userId, true)
+    ]);
+    expect(await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "PAID", totalBs: 35 });
+    expect(await prisma.auditEvent.count({ where: { entityId: cash.id, action: "CASH_RECEIVED" } })).toBe(1);
+    expect(await prisma.auditEvent.count({ where: { entityId: qr.id, action: "QR_MANUALLY_VERIFIED" } })).toBe(1);
+    await expect(verifyQrManually(prisma, payment.id, qr.id, userId, false)).rejects.toThrow();
+    const outsider = await prisma.user.create({ data: { email: `outsider-${randomUUID()}@example.test`, passwordHash: "test", role: "DRIVER" } });
+    userIds.push(outsider.id);
+    await expect(recordCashReceived(prisma, payment.id, outsider.id)).rejects.toThrow("driver is not assigned");
+    expect(await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })).toMatchObject({ status: "CONFIRMED", totalBs: 35 });
   });
 
   it("allows only one concurrent operation to claim a request", async () => {

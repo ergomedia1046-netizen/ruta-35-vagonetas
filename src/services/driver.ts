@@ -28,6 +28,16 @@ export async function getDriverCurrentTrip(db: PrismaClient, userId: string) {
   });
 }
 
+export async function listDriverPendingPayments(db: PrismaClient, userId: string) {
+  const shift = await getActiveShift(db, userId);
+  if (!shift) throw new Error("no active shift");
+  return db.assignment.findMany({
+    where: { vehicleId: shift.vehicleId, booking: { status: "COMPLETED", payment: { parts: { some: { status: "PENDING" } } } } },
+    include: { booking: { include: { payment: { include: { parts: true } } } } },
+    orderBy: { assignedAt: "asc" }
+  });
+}
+
 export async function listCompatibleRequests(db: PrismaClient, userId: string) {
   const shift = await getActiveShift(db, userId);
   if (!shift) throw new Error("no active shift");

@@ -243,6 +243,21 @@ suite("web passenger to admin to Android driver portal workflow", () => {
     expect(joined.statusCode).toBe(200);
     expect(joined.json()).toMatchObject({ direction: "VILLAMONTES_TO_YACUIBA", position: 1 });
     expect((await app.inject({ method: "POST", url: `/api/v1/driver/trips/${tripId}/join-destination-queue`, headers: { ...driverHeaders, "idempotency-key": `trip-${suffix}-join` } })).statusCode).toBe(200);
+    // Arrival and joining the return queue must not hide an outstanding cash receipt.
+    const afterArrival = (await app.inject({ method: "GET", url: "/api/v1/driver/overview", headers: driverHeaders })).json();
+    expect(afterArrival.bookings).toHaveLength(0);
+    expect(afterArrival.pendingPayments).toEqual(expect.arrayContaining([expect.objectContaining({ bookingId })]));
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { bookingId }, include: { parts: true } });
+    expect((await app.inject({ method: "POST", url: `/api/v1/payments/${payment.id}/cash-received`, headers: { cookie: passengerCookie } })).statusCode).toBe(403);
+    const receipts = await Promise.all([driverHeaders, { cookie: adminCookie }].map(headers => app.inject({
+      method: "POST", url: `/api/v1/payments/${payment.id}/cash-received`, headers
+    })));
+    expect(receipts.map(response => response.statusCode)).toEqual([200, 200]);
+    expect(await prisma.auditEvent.count({ where: { entityId: payment.parts[0]!.id, action: "CASH_RECEIVED" } })).toBe(1);
+    expect(await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "PAID", totalBs: 245 });
+    expect((await app.inject({ method: "GET", url: "/api/v1/driver/overview", headers: driverHeaders })).json().pendingPayments).toHaveLength(0);
+    expect(await prisma.vehicle.findUniqueOrThrow({ where: { id: vehicle.id } })).toMatchObject({ status: "QUEUED" });
+    expect(await prisma.trip.findUniqueOrThrow({ where: { id: tripId } })).toMatchObject({ status: "COMPLETED" });
     const passengerBookings = await app.inject({ method: "GET", url: "/api/v1/bookings", headers: { cookie: passengerCookie } });
     const view = passengerBookings.json().find((b: any) => b.id === bookingId);
     expect(view).toMatchObject({ status: "COMPLETED", passengers: 7, totalBs: 245, assignment: { actualPassengers: 3, vehicle: { plate: vehicle.plate }, trip: { status: "COMPLETED" } } });

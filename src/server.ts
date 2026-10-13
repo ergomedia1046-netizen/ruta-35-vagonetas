@@ -10,7 +10,7 @@ import { confirmBooking } from "./services/booking-admin.js";
 import { assignBooking } from "./services/dispatch.js";
 import { recordCashReceived, verifyQrManually } from "./services/payments.js";
 import { createUser, createVehicle, createDriverShift, queueVehicle } from "./services/admin.js";
-import { getActiveShift, getDriverCurrentTrip, listCompatibleRequests, listDriverBookings, updateVehicleStatus } from "./services/driver.js";
+import { getActiveShift, getDriverCurrentTrip, listCompatibleRequests, listDriverBookings, listDriverPendingPayments, updateVehicleStatus } from "./services/driver.js";
 import argon2 from "argon2";
 import { correctIncident, listIncidents, reportCombinedIncident, restrictCombinedPayment, reviewIncident } from "./services/incidents.js";
 import { assignBookingManuallyForTest, heartbeatDriver, listManualDispatchCandidates, manualTestDispatchEnabled, PRESENCE_TTL_MS } from "./services/test-dispatch.js";
@@ -192,13 +192,14 @@ app.post("/api/v1/admin/shifts", { preHandler: requireRole("ADMIN") }, async (re
 app.get("/api/v1/driver/overview", { preHandler: requireRole("DRIVER") }, async (request, reply) => {
   const shift = await getActiveShift(prisma, request.authUser!.id);
   if (!shift) return reply.code(404).send({ error: "no_active_shift" });
-  const [bookings, requests, queueEntry, currentTrip] = await Promise.all([
+  const [bookings, requests, queueEntry, currentTrip, pendingPayments] = await Promise.all([
     listDriverBookings(prisma, request.authUser!.id),
     listCompatibleRequests(prisma, request.authUser!.id),
     prisma.queueEntry.findFirst({ where: { vehicleId: shift.vehicleId, active: true }, select: { direction: true, position: true, arrivedAt: true } }),
-    getDriverCurrentTrip(prisma, request.authUser!.id)
+    getDriverCurrentTrip(prisma, request.authUser!.id),
+    listDriverPendingPayments(prisma, request.authUser!.id)
   ]);
-  return { vehicle: shift.vehicle, queue: queueEntry, bookings, requests, currentTrip, warning: "Realiza operaciones solo con el vehículo detenido." };
+  return { vehicle: shift.vehicle, queue: queueEntry, bookings, requests, currentTrip, pendingPayments, warning: "Realiza operaciones solo con el vehículo detenido." };
 });
 app.post("/api/v1/driver/vehicles/:id/status", { preHandler: requireRole("ADMIN") }, async (request, reply) => {
   const params = z.object({ id: z.string().min(1) }).safeParse(request.params);

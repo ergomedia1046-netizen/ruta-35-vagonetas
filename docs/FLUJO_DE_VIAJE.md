@@ -15,6 +15,10 @@ El viaje se registra en `Trip`, separado del estado operativo del vehículo (`AV
 
 El conteo real por reserva no puede exceder su cantidad reservada ni la capacidad del vehículo. En un expreso se mantienen los siete asientos reservados y Bs 245 aunque suban menos personas.
 
+## Pagos independientes
+
+`Registrar efectivo recibido` permanece disponible para las reservas terminadas que todavía tienen una parte pendiente. Se muestran en `pendingPayments` del resumen del chofer, sin contar sus plazas como ocupadas. Registrar el efectivo no avanza el viaje ni cambia el vehículo. Cada pago se bloquea durante su registro: las repeticiones devuelven el recibo existente y generan un único evento `CASH_RECEIVED`. La revisión QR comparte ese bloqueo para calcular correctamente `PARTIAL` o `PAID` en pagos combinados concurrentes.
+
 ## API móvil
 
 - `GET /api/v1/driver/overview`: devuelve el turno, reservas, viaje actual y eventos.
