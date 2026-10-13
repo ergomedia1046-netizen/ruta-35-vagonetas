@@ -3,9 +3,9 @@
     "name": "Ruta 35 Pasajero (Pruebas)",
     "slug": "ruta-35-pasajeros",
     "owner": "ergo146",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
-    "android": { "package": "bo.ruta35.passenger", "permissions": [] },
+    "android": { "package": "bo.ruta35.passenger", "versionCode": 2, "permissions": [] },
     "plugins": ["expo-secure-store"],
     "extra": {
       "eas": {

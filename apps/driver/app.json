@@ -1,11 +1,11 @@
 {
   "expo": {
     "name": "Ruta 35 Chofer (Pruebas)",
-    "slug": "ruta35-driver",
+    "slug": "ruta-35-driver",
     "owner": "ergo146",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
-    "android": { "package": "bo.ruta35.driver", "permissions": [] },
+    "android": { "package": "bo.ruta35.driver", "versionCode": 2, "permissions": [] },
     "plugins": ["expo-secure-store"],
     "extra": {
       "eas": {
