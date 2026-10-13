@@ -6,8 +6,8 @@ import { Button, Busy, Card, Field, Heading, Label, Notice, Page, colors } from 
 
 const explain = (e: unknown) => e instanceof ApiError ? e.status === 0 ? "Sin conexión con el servidor. Comprueba internet y actualiza." : `${e.code} (${e.status})` : e instanceof Error ? e.message : "Ocurrió un error inesperado.";
 const tripLabels: Record<string, string> = { ASSIGNED: "Viaje asignado", TO_PICKUP: "Yendo a recoger al pasajero", PICKED_UP: "Pasajero(s) recogido(s)", IN_TRANSIT: "En ruta al destino", ARRIVED: "Pasajero(s) entregado(s)", COMPLETED: "Viaje finalizado" };
-const actionLabels: Record<string, string> = { GO_TO_PICKUP: "Ir a recoger", CONFIRM_PICKUP: "Confirmar recogida", START_TRIP: "Iniciar viaje", CONFIRM_ARRIVAL: "Confirmar llegada", MARK_AVAILABLE: "Estoy disponible" };
 const destinationName = (direction: string) => direction === "YACUIBA_TO_VILLAMONTES" ? "Villamontes" : "Yacuiba";
+const queueCity = (direction: string) => direction === "YACUIBA_TO_VILLAMONTES" ? "Yacuiba" : "Villamontes";
 export default function App() {
   const [session, setSession] = useState<{ id: string; role: string } | null>(null);
   const [testMode, setTestMode] = useState(false);
@@ -41,7 +41,7 @@ export default function App() {
       </Card>
       {trip ? <Card><Text style={{ color: colors.ink, fontSize: 18, fontWeight: "900" }}>Flujo del viaje</Text><Notice>{tripLabels[trip.status] ?? trip.status} · {trip.direction === "YACUIBA_TO_VILLAMONTES" ? "Yacuiba → Villamontes" : "Villamontes → Yacuiba"}</Notice>
         {trip.assignments?.map((a: any) => <View key={a.bookingId} style={{ gap: 5, marginTop: 6 }}><Notice>Reserva {a.bookingId.slice(-6)} · {a.booking.kind} · {a.booking.passengers} asientos reservados · Bs {a.booking.totalBs}</Notice>{a.actualPassengers !== null ? <Notice>Pasajeros que subieron: {a.actualPassengers}</Notice> : null}{trip.status === "TO_PICKUP" ? <><Label>¿Cuántos subieron en esta reserva? (máx. {a.booking.passengers})</Label><Field keyboardType="number-pad" value={boardingCounts[a.bookingId] ?? ""} placeholder="Introduce la cantidad real" onChangeText={(value) => setBoardingCounts((old) => ({ ...old, [a.bookingId]: value.replace(/\D/g, "").slice(0, 1) }))} /></> : null}</View>)}
-        {trip.events?.map((event: any) => <Notice key={event.id}>{tripLabels[event.toStatus] ?? event.toStatus} · {new Date(event.createdAt).toLocaleString("es-BO")}</Notice>)}
+        {trip.events?.map((event: any) => <Notice key={event.id}>{event.action === "JOIN_DESTINATION_QUEUE" ? `Se unió a la fila de ${queueCity(event.details.direction)}` : tripLabels[event.toStatus] ?? event.toStatus} · {new Date(event.createdAt).toLocaleString("es-BO")}</Notice>)}
         {trip.status === "ASSIGNED" ? <Button title="Ir a recoger" disabled={working || vehicle?.status !== "QUEUED"} onPress={() => act(() => api.tripAction(trip.id, "GO_TO_PICKUP"))} /> : null}
         {trip.status === "TO_PICKUP" ? <Button title="Confirmar recogida" disabled={working || !trip.assignments?.length || trip.assignments.some((a: any) => !/^\d+$/.test(boardingCounts[a.bookingId] ?? "") || Number(boardingCounts[a.bookingId]) > a.booking.passengers)} onPress={() => act(() => api.tripAction(trip.id, "CONFIRM_PICKUP", Object.fromEntries(trip.assignments.map((a: any) => [a.bookingId, Number(boardingCounts[a.bookingId])]))))} /> : null}
         {trip.status === "PICKED_UP" ? <Button title="Iniciar viaje" disabled={working} onPress={() => act(() => api.tripAction(trip.id, "START_TRIP"))} /> : null}
