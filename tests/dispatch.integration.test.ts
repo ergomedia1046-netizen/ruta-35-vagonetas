@@ -13,6 +13,12 @@ suite("PostgreSQL dispatch and incident integration", () => {
   let userIds: string[] = [];
 
   afterEach(async () => {
+    const trips = vehicleId ? await prisma.trip.findMany({ where: { vehicleId }, select: { id: true } }) : [];
+    const tripIds = trips.map(trip => trip.id);
+    if (tripIds.length) await prisma.tripEvent.deleteMany({ where: { tripId: { in: tripIds } } });
+    if (bookingIds.length) await prisma.assignment.deleteMany({ where: { bookingId: { in: bookingIds } } });
+    if (vehicleId) await prisma.assignment.deleteMany({ where: { vehicleId } });
+    if (tripIds.length) await prisma.trip.deleteMany({ where: { id: { in: tripIds } } });
     if (userIds.length) {
       await prisma.paymentRestriction.deleteMany({ where: { OR: [
         { userId: { in: userIds } }, { createdById: { in: userIds } }, { revokedById: { in: userIds } }

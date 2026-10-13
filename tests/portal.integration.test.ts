@@ -203,16 +203,16 @@ suite("web passenger to admin to Android driver portal workflow", () => {
     vehicleIds.push(vehicle.id);
     await prisma.driverShift.create({ data: { userId: driver.id, vehicleId: vehicle.id, startsAt: new Date(Date.now() - 60_000) } });
     await prisma.queueEntry.create({ data: { vehicleId: vehicle.id, direction: "YACUIBA_TO_VILLAMONTES", position: 1 } });
-    const cookieLogin = await app.inject({ method: "POST", url: "/api/v1/auth/login", payload: { email: passengerEmail, password } });
+    const cookieLogin = await app.inject({ method: "POST", url: "/api/v1/auth/login", remoteAddress: "127.0.0.21", payload: { email: passengerEmail, password } });
     const passengerCookie = String(cookieLogin.headers["set-cookie"]).split(";")[0];
     const created = await app.inject({ method: "POST", url: "/api/v1/bookings", headers: { cookie: passengerCookie, "idempotency-key": `trip-${suffix}` },
       payload: { direction: "YACUIBA_TO_VILLAMONTES", origin: "Yacuiba", destination: "Villamontes", pickupPoint: "PRUEBA: parada ficticia", passengers: 7, kind: "EXPRESS", paymentMethod: "CASH", cashBs: 245, qrBs: 0 } });
     const bookingId = created.json().id as string;
     bookingIds.push(bookingId);
-    const adminLogin = await app.inject({ method: "POST", url: "/api/v1/auth/login", payload: { email: adminEmail, password } });
+    const adminLogin = await app.inject({ method: "POST", url: "/api/v1/auth/login", remoteAddress: "127.0.0.22", payload: { email: adminEmail, password } });
     const adminCookie = String(adminLogin.headers["set-cookie"]).split(";")[0];
     expect((await app.inject({ method: "POST", url: `/api/v1/admin/bookings/${bookingId}/confirm`, headers: { cookie: adminCookie } })).statusCode).toBe(200);
-    const driverLogin = await app.inject({ method: "POST", url: "/api/v1/auth/native/login", payload: { email: driverEmail, password } });
+    const driverLogin = await app.inject({ method: "POST", url: "/api/v1/auth/native/login", remoteAddress: "127.0.0.23", payload: { email: driverEmail, password } });
     const driverHeaders = { authorization: `Bearer ${driverLogin.json().accessToken}` };
     expect((await app.inject({ method: "POST", url: "/api/v1/driver/assignments", headers: driverHeaders, payload: { bookingId, vehicleId: vehicle.id } })).statusCode).toBe(200);
     const initial = await app.inject({ method: "GET", url: "/api/v1/driver/overview", headers: driverHeaders });
