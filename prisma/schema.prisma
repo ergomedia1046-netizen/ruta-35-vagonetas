@@ -86,6 +86,7 @@ model User {
   shifts       DriverShift[]
   auditEvents  AuditEvent[]
   sessions     Session[]
+  driverPresence DriverPresence?
   combinedPaymentRestricted Boolean @default(false)
   reportedIncidents Incident[] @relation("IncidentReporter")
   reviewedIncidents Incident[] @relation("IncidentReviewer")
@@ -206,6 +207,12 @@ model Session {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([expiresAt])
+}
+
+model DriverPresence {
+  userId     String   @id
+  lastSeenAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Incident {

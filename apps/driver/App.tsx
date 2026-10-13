@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { AppState, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../packages/mobile-core/src/api";
 import { api, secureTokenStore } from "../../packages/mobile-core/src/native";
 import { Button, Busy, Card, Field, Heading, Label, Notice, Page, colors } from "../../packages/mobile-core/src/ui";
@@ -11,7 +11,12 @@ export default function App() {
   const [overview, setOverview] = useState<Record<string, any> | null>(null);
   const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
   const [working, setWorking] = useState(false); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
-  async function refresh() { setOverview(await api.driverOverview()); }
+  async function refresh() { setOverview(await api.driverOverview()); await api.driverPresence(); }
+  useEffect(() => {
+    if (!session) return;
+    const timer = setInterval(() => { if (AppState.currentState === "active") api.driverPresence().catch(() => undefined); }, 60_000);
+    return () => clearInterval(timer);
+  }, [session?.id]);
   useEffect(() => { (async () => { try { const config = await api.config(); setTestMode(config.testMode); if (!config.testMode) throw new Error("Entorno de pruebas no habilitado en el servidor; operaciones móviles bloqueadas."); const token = await secureTokenStore.get(); if (token) { const me = await api.me(); if (me.role === "DRIVER") { setSession(me); setOverview(await api.driverOverview()); } else { setError("Esta aplicación solo admite cuentas de chofer."); await api.logout(); } } } catch (e) { if (e instanceof ApiError && e.status === 401) await secureTokenStore.clear(); else if (!(e instanceof ApiError && e.status === 404)) setError(explain(e)); } finally { setLoading(false); } })(); }, []);
   async function login() { if (!testMode) { setError("La aplicación solo opera contra un backend con modo de pruebas habilitado."); return; } setWorking(true); setError(""); try { const me = await api.login(email.trim(), password); if (me.role !== "DRIVER") { await api.logout(); throw new Error("Tu cuenta no tiene permiso de chofer."); } setSession(me); await refresh(); } catch (e) { setError(explain(e)); } finally { setWorking(false); } }
   async function act(fn: () => Promise<unknown>) { setWorking(true); setError(""); try { await fn(); await refresh(); } catch (e) { setError(explain(e)); } finally { setWorking(false); } }

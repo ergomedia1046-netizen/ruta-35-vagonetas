@@ -81,6 +81,7 @@ export class Ruta35Api {
   async bookings() { return this.request<Array<Record<string, any>>>("/api/v1/bookings"); }
   async cancelBooking(id: string) { return this.request<Record<string, unknown>>(`/api/v1/bookings/${encodeURIComponent(id)}/cancel`, { method: "POST" }); }
   async driverOverview() { return this.request<Record<string, any>>("/api/v1/driver/overview"); }
+  async driverPresence() { return this.request<{ lastSeenAt: string }>("/api/v1/driver/presence", { method: "POST" }); }
   async assign(bookingId: string, vehicleId: string) {
     return this.request<Record<string, unknown>>("/api/v1/driver/assignments", { method: "POST", body: JSON.stringify({ bookingId, vehicleId }) });
   }

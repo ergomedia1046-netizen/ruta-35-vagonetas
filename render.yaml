@@ -13,6 +13,10 @@ services:
         value: production
       - key: RUTA35_TEST_MODE
         value: "true"
+      - key: RUTA35_TEST_TARGET
+        value: ruta35-android-pruebas
+      - key: RUTA35_TEST_MANUAL_DISPATCH
+        value: "true"
       - key: SESSION_SECRET
         generateValue: true
       - key: DATABASE_URL
