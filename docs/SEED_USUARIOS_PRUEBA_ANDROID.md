@@ -20,8 +20,8 @@ La conexión privada se introduce en una solicitud de PowerShell que no muestra 
 $env:RUTA35_TEST_MODE = 'true'
 $env:RUTA35_TEST_SEED_TARGET = 'ruta35-android-pruebas'
 $env:RUTA35_TEST_SEED_ALLOWED_HOST = Read-Host 'Hostname exacto del endpoint Neon de pruebas'
-$env:RUTA35_TEST_CREDENTIALS_FILE = Join-Path $HOME 'Ruta35\credenciales-android-pruebas.csv'
-$env:RUTA35_TEST_REPORT_FILE = Join-Path $HOME 'Ruta35\informe-android-pruebas.csv'
+$env:RUTA35_TEST_CREDENTIALS_FILE = Join-Path $HOME 'Documents\Codex\outputs\Ruta35\credenciales-android-pruebas.csv'
+$env:RUTA35_TEST_REPORT_FILE = Join-Path $HOME 'Documents\Codex\outputs\Ruta35\informe-android-pruebas.csv'
 $secure = Read-Host 'DATABASE_URL privada de la base Neon de pruebas' -AsSecureString
 $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
 try {
