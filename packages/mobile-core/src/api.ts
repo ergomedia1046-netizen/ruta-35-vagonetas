@@ -3,6 +3,7 @@ export type Session = { id: string; role: Role; accessToken: string; expiresAt: 
 export type Direction = "YACUIBA_TO_VILLAMONTES" | "VILLAMONTES_TO_YACUIBA";
 export type BookingKind = "ORDINARY" | "EXPRESS";
 export type PaymentMethod = "CASH" | "QR" | "COMBINED";
+export type TripAction = "GO_TO_PICKUP" | "CONFIRM_PICKUP" | "START_TRIP" | "CONFIRM_ARRIVAL" | "MARK_AVAILABLE";
 export type BookingInput = {
   direction: Direction; origin: string; destination: string; pickupPoint: string;
   pickupReference?: string; passengers: number; kind: BookingKind;
@@ -88,8 +89,14 @@ export class Ruta35Api {
   async cashReceived(paymentId: string) {
     return this.request<Record<string, unknown>>(`/api/v1/payments/${encodeURIComponent(paymentId)}/cash-received`, { method: "POST" });
   }
-  async setVehicleStatus(vehicleId: string, status: "ON_TRIP" | "AVAILABLE") {
-    return this.request<Record<string, unknown>>(`/api/v1/driver/vehicles/${encodeURIComponent(vehicleId)}/status`, { method: "POST", body: JSON.stringify({ status }) });
+  async tripAction(tripId: string, action: TripAction, actualPassengers?: Record<string, number>) {
+    const idempotencyKey = `trip-${tripId}-${action}`;
+    return this.request<Record<string, any>>(`/api/v1/driver/trips/${encodeURIComponent(tripId)}/actions`, {
+      method: "POST", body: JSON.stringify({ action, ...(actualPassengers ? { actualPassengers } : {}) })
+    }, idempotencyKey);
+  }
+  async joinDestinationQueue(tripId: string) {
+    return this.request<Record<string, any>>(`/api/v1/driver/trips/${encodeURIComponent(tripId)}/join-destination-queue`, { method: "POST" }, `queue-${tripId}-destination`);
   }
 }
 

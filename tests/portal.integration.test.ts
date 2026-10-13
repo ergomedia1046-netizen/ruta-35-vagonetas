@@ -23,8 +23,12 @@ suite("web passenger to admin to Android driver portal workflow", () => {
     const bookings = bookingIds.splice(0);
     const vehicles = vehicleIds.splice(0);
     if (bookings.length) {
+      const trips = await prisma.trip.findMany({ where: { assignments: { some: { bookingId: { in: bookings } } } }, select: { id: true } });
+      const tripIds = trips.map(trip => trip.id);
+      if (tripIds.length) await prisma.tripEvent.deleteMany({ where: { tripId: { in: tripIds } } });
       await prisma.auditEvent.deleteMany({ where: { entityId: { in: bookings } } });
       await prisma.assignment.deleteMany({ where: { bookingId: { in: bookings } } });
+      if (tripIds.length) await prisma.trip.deleteMany({ where: { id: { in: tripIds } } });
       await prisma.paymentPart.deleteMany({ where: { payment: { bookingId: { in: bookings } } } });
       await prisma.payment.deleteMany({ where: { bookingId: { in: bookings } } });
       await prisma.booking.deleteMany({ where: { id: { in: bookings } } });
@@ -180,5 +184,69 @@ suite("web passenger to admin to Android driver portal workflow", () => {
     await prisma.driverPresence.update({ where: { userId: chosenDriver.id }, data: { lastSeenAt: new Date(Date.now() - 121_000) } });
     const expiredDashboard = await app.inject({ method: "GET", url: "/api/v1/admin/dashboard", headers: { cookie: adminCookie } });
     expect(expiredDashboard.json().vehicles).toEqual(expect.arrayContaining([expect.objectContaining({ id: chosenVehicle.id, connectedRecently: false })]));
+  });
+
+  it("tracks an Express trip independently from reserved seats, is idempotent, and joins the destination queue only on request", async () => {
+    const suffix = randomUUID();
+    const password = "Only-for-trip-lifecycle-2026!";
+    const passengerEmail = `trip-passenger-${suffix}@example.test`;
+    const adminEmail = `trip-admin-${suffix}@example.test`;
+    const driverEmail = `trip-driver-${suffix}@example.test`;
+    emails.push(passengerEmail, adminEmail, driverEmail);
+    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+    const [passenger, admin, driver] = await Promise.all([
+      prisma.user.create({ data: { email: passengerEmail, passwordHash, role: "PASSENGER" } }),
+      prisma.user.create({ data: { email: adminEmail, passwordHash, role: "ADMIN" } }),
+      prisma.user.create({ data: { email: driverEmail, passwordHash, role: "DRIVER" } })
+    ]);
+    const vehicle = await prisma.vehicle.create({ data: { plate: `TEST-${suffix.slice(0, 8)}`, capacity: 7, status: "QUEUED" } });
+    vehicleIds.push(vehicle.id);
+    await prisma.driverShift.create({ data: { userId: driver.id, vehicleId: vehicle.id, startsAt: new Date(Date.now() - 60_000) } });
+    await prisma.queueEntry.create({ data: { vehicleId: vehicle.id, direction: "YACUIBA_TO_VILLAMONTES", position: 1 } });
+    const cookieLogin = await app.inject({ method: "POST", url: "/api/v1/auth/login", payload: { email: passengerEmail, password } });
+    const passengerCookie = String(cookieLogin.headers["set-cookie"]).split(";")[0];
+    const created = await app.inject({ method: "POST", url: "/api/v1/bookings", headers: { cookie: passengerCookie, "idempotency-key": `trip-${suffix}` },
+      payload: { direction: "YACUIBA_TO_VILLAMONTES", origin: "Yacuiba", destination: "Villamontes", pickupPoint: "PRUEBA: parada ficticia", passengers: 7, kind: "EXPRESS", paymentMethod: "CASH", cashBs: 245, qrBs: 0 } });
+    const bookingId = created.json().id as string;
+    bookingIds.push(bookingId);
+    const adminLogin = await app.inject({ method: "POST", url: "/api/v1/auth/login", payload: { email: adminEmail, password } });
+    const adminCookie = String(adminLogin.headers["set-cookie"]).split(";")[0];
+    expect((await app.inject({ method: "POST", url: `/api/v1/admin/bookings/${bookingId}/confirm`, headers: { cookie: adminCookie } })).statusCode).toBe(200);
+    const driverLogin = await app.inject({ method: "POST", url: "/api/v1/auth/native/login", payload: { email: driverEmail, password } });
+    const driverHeaders = { authorization: `Bearer ${driverLogin.json().accessToken}` };
+    expect((await app.inject({ method: "POST", url: "/api/v1/driver/assignments", headers: driverHeaders, payload: { bookingId, vehicleId: vehicle.id } })).statusCode).toBe(200);
+    const initial = await app.inject({ method: "GET", url: "/api/v1/driver/overview", headers: driverHeaders });
+    const tripId = initial.json().currentTrip.id as string;
+    expect(initial.json().currentTrip.status).toBe("ASSIGNED");
+    expect((await app.inject({ method: "POST", url: `/api/v1/driver/trips/${tripId}/actions`, headers: { cookie: passengerCookie, "idempotency-key": `role-${suffix}-passenger` }, payload: { action: "GO_TO_PICKUP" } })).statusCode).toBe(403);
+    expect((await app.inject({ method: "POST", url: `/api/v1/driver/trips/${tripId}/actions`, headers: { cookie: adminCookie, "idempotency-key": `role-${suffix}-admin` }, payload: { action: "GO_TO_PICKUP" } })).statusCode).toBe(403);
+
+    const goHeaders = { ...driverHeaders, "idempotency-key": `trip-${suffix}-go-pickup` };
+    const departures = await Promise.all([1, 2].map(() => app.inject({ method: "POST", url: `/api/v1/driver/trips/${tripId}/actions`, headers: goHeaders, payload: { action: "GO_TO_PICKUP" } })));
+    expect(departures.map(r => r.statusCode)).toEqual([200, 200]);
+    expect(await prisma.tripEvent.count({ where: { tripId, action: "GO_TO_PICKUP" } })).toBe(1);
+    expect(await prisma.vehicle.findUniqueOrThrow({ where: { id: vehicle.id } })).toMatchObject({ status: "ON_TRIP" });
+    expect(await prisma.queueEntry.count({ where: { vehicleId: vehicle.id, active: true } })).toBe(0);
+    expect((await app.inject({ method: "POST", url: `/api/v1/driver/trips/${tripId}/actions`, headers: { ...driverHeaders, "idempotency-key": `trip-${suffix}-invalid` }, payload: { action: "START_TRIP" } })).statusCode).toBe(409);
+
+    expect((await app.inject({ method: "POST", url: `/api/v1/driver/trips/${tripId}/actions`, headers: { ...driverHeaders, "idempotency-key": `trip-${suffix}-invalid-count` }, payload: { action: "CONFIRM_PICKUP", actualPassengers: { [bookingId]: 8 } } })).statusCode).toBe(400);
+    expect((await app.inject({ method: "POST", url: `/api/v1/driver/trips/${tripId}/actions`, headers: { ...driverHeaders, "idempotency-key": `trip-${suffix}-pickup` }, payload: { action: "CONFIRM_PICKUP", actualPassengers: { [bookingId]: 3 } } })).statusCode).toBe(200);
+    expect(await prisma.assignment.findUniqueOrThrow({ where: { bookingId } })).toMatchObject({ actualPassengers: 3 });
+    expect(await prisma.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ passengers: 7, totalBs: 245, status: "ASSIGNED" });
+    expect((await app.inject({ method: "POST", url: `/api/v1/driver/trips/${tripId}/actions`, headers: { ...driverHeaders, "idempotency-key": `trip-${suffix}-start` }, payload: { action: "START_TRIP" } })).statusCode).toBe(200);
+    expect((await app.inject({ method: "POST", url: `/api/v1/driver/trips/${tripId}/actions`, headers: { ...driverHeaders, "idempotency-key": `trip-${suffix}-arrival` }, payload: { action: "CONFIRM_ARRIVAL" } })).statusCode).toBe(200);
+    expect(await prisma.vehicle.findUniqueOrThrow({ where: { id: vehicle.id } })).toMatchObject({ status: "ON_TRIP" });
+    expect(await prisma.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ passengers: 7, totalBs: 245, status: "COMPLETED" });
+    expect((await app.inject({ method: "POST", url: `/api/v1/driver/trips/${tripId}/actions`, headers: { ...driverHeaders, "idempotency-key": `trip-${suffix}-available` }, payload: { action: "MARK_AVAILABLE" } })).statusCode).toBe(200);
+    expect(await prisma.vehicle.findUniqueOrThrow({ where: { id: vehicle.id } })).toMatchObject({ status: "AVAILABLE" });
+    const joined = await app.inject({ method: "POST", url: `/api/v1/driver/trips/${tripId}/join-destination-queue`, headers: { ...driverHeaders, "idempotency-key": `trip-${suffix}-join` } });
+    expect(joined.statusCode).toBe(200);
+    expect(joined.json()).toMatchObject({ direction: "VILLAMONTES_TO_YACUIBA", position: 1 });
+    expect((await app.inject({ method: "POST", url: `/api/v1/driver/trips/${tripId}/join-destination-queue`, headers: { ...driverHeaders, "idempotency-key": `trip-${suffix}-join` } })).statusCode).toBe(200);
+    const passengerBookings = await app.inject({ method: "GET", url: "/api/v1/bookings", headers: { cookie: passengerCookie } });
+    const view = passengerBookings.json().find((b: any) => b.id === bookingId);
+    expect(view).toMatchObject({ status: "COMPLETED", passengers: 7, totalBs: 245, assignment: { actualPassengers: 3, vehicle: { plate: vehicle.plate }, trip: { status: "COMPLETED" } } });
+    expect(view.assignment.trip.events.map((event: any) => event.toStatus)).toEqual(["ASSIGNED", "TO_PICKUP", "PICKED_UP", "IN_TRANSIT", "ARRIVED", "COMPLETED"]);
+    expect((await app.inject({ method: "POST", url: `/api/v1/driver/vehicles/${vehicle.id}/status`, headers: driverHeaders, payload: { status: "AVAILABLE" } })).statusCode).toBe(403);
   });
 });

@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { assertCanAssign } from "../domain/booking.js";
+import { attachAssignmentToTrip } from "./trips.js";
 
 export const PRESENCE_TTL_MS = 2 * 60 * 1000;
 export const manualTestDispatchEnabled = () => process.env.RUTA35_TEST_MODE === "true"
@@ -111,6 +112,7 @@ export async function assignBookingManuallyForTest(db: PrismaClient, args: { boo
     }
     const bypassedQueuePriority = !!firstFeasibleVehicle && firstFeasibleVehicle !== vehicle.id;
     const assignment = await tx.assignment.create({ data: { bookingId: booking.id, vehicleId: vehicle.id } });
+    await attachAssignmentToTrip(tx, vehicle.id, booking.id, booking.direction, actor.id);
     await tx.booking.update({ where: { id: booking.id }, data: { status: "ASSIGNED" } });
     await tx.auditEvent.create({ data: { actorId: actor.id, action: "TEST_MANUAL_BOOKING_ASSIGNED", entityType: "Booking", entityId: booking.id,
       details: { vehicleId: vehicle.id, driverId: shift.user.id, occupiedSeatsAfter: occupiedSeats + booking.passengers,

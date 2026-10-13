@@ -21,9 +21,9 @@ describe("Ruta35Api", () => {
     const disconnected = new Ruta35Api("https://api.example.test", store, vi.fn(async () => { throw new TypeError("offline"); }) as typeof fetch);
     await expect(disconnected.me()).rejects.toMatchObject({ status: 0, code: "connection_unavailable" });
   });
-  it("uses the backend booking, history, cancel, driver overview, assignment and payment routes", async () => {
+  it("uses the backend booking, history, cancel, driver overview, trip transition and queue routes", async () => {
     const tokenStore = { ...store, set: vi.fn(async () => {}), clear: vi.fn(async () => {}) };
-    const transport = vi.fn(async (input: RequestInfo | URL) => {
+    const transport = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/api/v1/auth/native/login")) return new Response(JSON.stringify({ id: "u1", role: "PASSENGER", accessToken: "t", expiresAt: "2030-01-01T00:00:00Z" }), { status: 200 });
       if (url.includes("/api/v1/quote?")) return new Response(JSON.stringify({ totalBs: 35, currency: "BOB" }), { status: 200 });
@@ -38,14 +38,18 @@ describe("Ruta35Api", () => {
     await api.driverOverview();
     await api.assign("booking-2", "vehicle-1");
     await api.cashReceived("payment-1");
-    await api.setVehicleStatus("vehicle-1", "ON_TRIP");
+    await api.tripAction("trip-1", "CONFIRM_PICKUP", { "booking-2": 3 });
+    await api.joinDestinationQueue("trip-1");
     expect(tokenStore.set).toHaveBeenCalledWith("t");
     const urls = transport.mock.calls.map(([url]) => String(url));
     expect(urls).toEqual(expect.arrayContaining([
       "https://api.example.test/api/v1/auth/native/login", "https://api.example.test/api/v1/quote?passengers=1&kind=ORDINARY",
       "https://api.example.test/api/v1/bookings", "https://api.example.test/api/v1/bookings/booking-1/cancel",
       "https://api.example.test/api/v1/driver/overview", "https://api.example.test/api/v1/driver/assignments",
-      "https://api.example.test/api/v1/payments/payment-1/cash-received", "https://api.example.test/api/v1/driver/vehicles/vehicle-1/status"
+      "https://api.example.test/api/v1/payments/payment-1/cash-received",
+      "https://api.example.test/api/v1/driver/trips/trip-1/actions", "https://api.example.test/api/v1/driver/trips/trip-1/join-destination-queue"
     ]));
+    const tripRequest = transport.mock.calls.find(([url]) => String(url).endsWith("/api/v1/driver/trips/trip-1/actions"))?.[1];
+    expect(tripRequest?.headers).toMatchObject({ "Idempotency-Key": "trip-trip-1-CONFIRM_PICKUP", Authorization: "Bearer secure-token" });
   });
 });

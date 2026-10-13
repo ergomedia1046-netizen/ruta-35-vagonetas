@@ -18,6 +18,8 @@ const names: Record<string, string> = {
   ORDINARY: "Ordinario", EXPRESS: "Expreso", CASH: "Efectivo",
   QR: "QR manual", COMBINED: "Combinado"
 };
+const reservationStates: Record<string, string> = { PENDING: "Pendiente", CONFIRMED: "Confirmada", ASSIGNED: "Asignada", COMPLETED: "Completada", CANCELLED: "Cancelada" };
+const tripStates: Record<string, string> = { ASSIGNED: "Viaje asignado", TO_PICKUP: "Yendo a recoger", PICKED_UP: "Pasajero(s) recogido(s)", IN_TRANSIT: "En ruta", ARRIVED: "Llegada confirmada", COMPLETED: "Viaje finalizado" };
 
 function Options<T extends string>({ values, selected, onSelect }: {
   values: readonly T[]; selected: T; onSelect: (value: T) => void;
@@ -173,7 +175,10 @@ export default function App() {
       <Button title={working ? "Actualizando..." : "Actualizar historial"} secondary disabled={working} onPress={() => { setWorking(true); loadBookings().catch((cause) => setError(message(cause))).finally(() => setWorking(false)); }} />
       {bookings.length ? bookings.map((booking) => <Card key={booking.id}>
         <Text style={{ color: colors.ink, fontWeight: "900" }}>{booking.origin} a {booking.destination} - {names[booking.kind] ?? booking.kind}</Text>
-        <Notice>Estado: {booking.status} | Pasajeros: {booking.passengers} | Bs {booking.totalBs}</Notice>
+        <Notice>Reserva: {reservationStates[booking.status] ?? booking.status} | Asientos reservados: {booking.passengers} | Bs {booking.totalBs}</Notice>
+        {booking.assignment?.vehicle?.plate ? <Notice>Vehículo asignado: {booking.assignment.vehicle.plate}</Notice> : null}
+        {booking.assignment?.actualPassengers !== null && booking.assignment?.actualPassengers !== undefined ? <Notice>Pasajeros que abordaron: {booking.assignment.actualPassengers} (de {booking.passengers} asientos reservados)</Notice> : null}
+        {booking.assignment?.trip ? <View style={{ gap: 5, marginTop: 4 }}><Label>Avance del viaje</Label>{booking.assignment.trip.events.map((event: any) => <Notice key={event.id}>{tripStates[event.toStatus] ?? event.toStatus} · {new Date(event.createdAt).toLocaleString("es-BO")}{booking.assignment.vehicle?.plate ? ` · ${booking.assignment.vehicle.plate}` : ""}</Notice>)}</View> : null}
         <Notice>Recogida: {booking.pickupPoint}{booking.pickupReference ? ` (${booking.pickupReference})` : ""}</Notice>
         <Notice>Pago: {names[booking.paymentMethod] ?? booking.paymentMethod} - {booking.payment?.status ?? "pendiente"}</Notice>
         {booking.status === "PENDING" ? <Button title="Cancelar reserva pendiente" secondary disabled={working} onPress={() => cancelBooking(booking.id)} /> : null}

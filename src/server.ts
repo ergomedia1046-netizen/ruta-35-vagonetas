@@ -10,10 +10,11 @@ import { confirmBooking } from "./services/booking-admin.js";
 import { assignBooking } from "./services/dispatch.js";
 import { recordCashReceived, verifyQrManually } from "./services/payments.js";
 import { createUser, createVehicle, createDriverShift, queueVehicle } from "./services/admin.js";
-import { getActiveShift, listCompatibleRequests, listDriverBookings, updateVehicleStatus } from "./services/driver.js";
+import { getActiveShift, getDriverCurrentTrip, listCompatibleRequests, listDriverBookings, updateVehicleStatus } from "./services/driver.js";
 import argon2 from "argon2";
 import { correctIncident, listIncidents, reportCombinedIncident, restrictCombinedPayment, reviewIncident } from "./services/incidents.js";
 import { assignBookingManuallyForTest, heartbeatDriver, listManualDispatchCandidates, manualTestDispatchEnabled, PRESENCE_TTL_MS } from "./services/test-dispatch.js";
+import { applyTripAction, joinDestinationQueue } from "./services/trips.js";
 
 if (!process.env.SESSION_SECRET || Buffer.byteLength(process.env.SESSION_SECRET) < 32) {
   throw new Error("SESSION_SECRET must contain at least 32 bytes");
@@ -191,19 +192,38 @@ app.post("/api/v1/admin/shifts", { preHandler: requireRole("ADMIN") }, async (re
 app.get("/api/v1/driver/overview", { preHandler: requireRole("DRIVER") }, async (request, reply) => {
   const shift = await getActiveShift(prisma, request.authUser!.id);
   if (!shift) return reply.code(404).send({ error: "no_active_shift" });
-  const [bookings, requests, queueEntry] = await Promise.all([
+  const [bookings, requests, queueEntry, currentTrip] = await Promise.all([
     listDriverBookings(prisma, request.authUser!.id),
     listCompatibleRequests(prisma, request.authUser!.id),
-    prisma.queueEntry.findFirst({ where: { vehicleId: shift.vehicleId, active: true }, select: { direction: true, position: true, arrivedAt: true } })
+    prisma.queueEntry.findFirst({ where: { vehicleId: shift.vehicleId, active: true }, select: { direction: true, position: true, arrivedAt: true } }),
+    getDriverCurrentTrip(prisma, request.authUser!.id)
   ]);
-  return { vehicle: shift.vehicle, queue: queueEntry, bookings, requests, warning: "Realiza operaciones solo con el vehículo detenido." };
+  return { vehicle: shift.vehicle, queue: queueEntry, bookings, requests, currentTrip, warning: "Realiza operaciones solo con el vehículo detenido." };
 });
-app.post("/api/v1/driver/vehicles/:id/status", { preHandler: requireRole("DRIVER", "ADMIN") }, async (request, reply) => {
+app.post("/api/v1/driver/vehicles/:id/status", { preHandler: requireRole("ADMIN") }, async (request, reply) => {
   const params = z.object({ id: z.string().min(1) }).safeParse(request.params);
   const body = z.object({ status: z.enum(["AVAILABLE", "QUEUED", "ON_TRIP", "INACTIVE"]) }).safeParse(request.body);
   if (!params.success || !body.success) return reply.code(400).send({ error: "invalid_request" });
   try { return await updateVehicleStatus(prisma, params.data.id, request.authUser!.id, body.data.status); }
   catch { return reply.code(403).send({ error: "vehicle_status_change_denied" }); }
+});
+
+app.post("/api/v1/driver/trips/:id/actions", { preHandler: requireRole("DRIVER") }, async (request, reply) => {
+  const params = z.object({ id: z.string().min(1) }).safeParse(request.params);
+  const body = z.object({ action: z.enum(["GO_TO_PICKUP", "CONFIRM_PICKUP", "START_TRIP", "CONFIRM_ARRIVAL", "MARK_AVAILABLE"]),
+    actualPassengers: z.record(z.string(), z.number().int().min(0).max(7)).optional() }).safeParse(request.body);
+  const key = request.headers["idempotency-key"];
+  if (!params.success || !body.success || typeof key !== "string" || key.length < 12 || key.length > 128)
+    return reply.code(400).send({ error: "invalid_request" });
+  try { return await applyTripAction(prisma, request.authUser!.id, params.data.id, body.data.action, key, body.data.actualPassengers); }
+  catch { return reply.code(409).send({ error: "trip_transition_not_available" }); }
+});
+app.post("/api/v1/driver/trips/:id/join-destination-queue", { preHandler: requireRole("DRIVER") }, async (request, reply) => {
+  const params = z.object({ id: z.string().min(1) }).safeParse(request.params);
+  const key = request.headers["idempotency-key"];
+  if (!params.success || typeof key !== "string" || key.length < 12 || key.length > 128) return reply.code(400).send({ error: "invalid_request" });
+  try { return await joinDestinationQueue(prisma, request.authUser!.id, params.data.id, key); }
+  catch { return reply.code(409).send({ error: "destination_queue_join_not_available" }); }
 });
 
 

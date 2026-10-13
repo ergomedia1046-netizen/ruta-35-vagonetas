@@ -64,6 +64,15 @@ enum VehicleStatus {
   INACTIVE
 }
 
+enum TripStatus {
+  ASSIGNED
+  TO_PICKUP
+  PICKED_UP
+  IN_TRANSIT
+  ARRIVED
+  COMPLETED
+}
+
 enum IncidentStatus {
   OPEN
   REVIEWED
@@ -87,6 +96,7 @@ model User {
   auditEvents  AuditEvent[]
   sessions     Session[]
   driverPresence DriverPresence?
+  tripEvents TripEvent[]
   combinedPaymentRestricted Boolean @default(false)
   reportedIncidents Incident[] @relation("IncidentReporter")
   reviewedIncidents Incident[] @relation("IncidentReviewer")
@@ -103,6 +113,7 @@ model Vehicle {
   queueEntries QueueEntry[]
   assignments  Assignment[]
   shifts       DriverShift[]
+  trips        Trip[]
 }
 
 model DriverShift {
@@ -157,9 +168,42 @@ model Assignment {
   id         String   @id @default(cuid())
   bookingId  String   @unique
   vehicleId  String
+  tripId     String?
+  actualPassengers Int?
   assignedAt DateTime @default(now())
   booking    Booking  @relation(fields: [bookingId], references: [id])
   vehicle    Vehicle  @relation(fields: [vehicleId], references: [id])
+  trip       Trip?    @relation(fields: [tripId], references: [id])
+}
+
+model Trip {
+  id          String     @id @default(cuid())
+  vehicleId   String
+  direction   Direction
+  status      TripStatus @default(ASSIGNED)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  vehicle     Vehicle    @relation(fields: [vehicleId], references: [id])
+  assignments Assignment[]
+  events      TripEvent[]
+
+  @@index([vehicleId, status])
+}
+
+model TripEvent {
+  id             String     @id @default(cuid())
+  tripId         String
+  actorId        String
+  action         String
+  fromStatus     TripStatus?
+  toStatus       TripStatus
+  idempotencyKey String     @unique
+  details        Json
+  createdAt      DateTime   @default(now())
+  trip           Trip       @relation(fields: [tripId], references: [id])
+  actor          User       @relation(fields: [actorId], references: [id])
+
+  @@index([tripId, createdAt])
 }
 
 model Payment {

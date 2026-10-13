@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { assertCanAssign } from "../domain/booking.js";
+import { attachAssignmentToTrip } from "./trips.js";
 
 type Db = PrismaClient;
 export async function assignBooking(db: Db, bookingId: string, vehicleId: string, actorId: string) {
@@ -81,6 +82,7 @@ export async function assignBooking(db: Db, bookingId: string, vehicleId: string
         throw new Error("vehicle queue priority");
     }
     const assignment = await tx.assignment.create({ data: { bookingId, vehicleId } });
+    await attachAssignmentToTrip(tx, vehicleId, bookingId, booking.direction, actorId);
     await tx.booking.update({ where: { id: bookingId }, data: { status: "ASSIGNED" } });
     await tx.auditEvent.create({ data: {
       actorId, action: "BOOKING_ASSIGNED", entityType: "Booking", entityId: bookingId,

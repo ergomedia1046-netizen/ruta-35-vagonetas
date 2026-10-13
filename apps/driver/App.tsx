@@ -5,12 +5,16 @@ import { api, secureTokenStore } from "../../packages/mobile-core/src/native";
 import { Button, Busy, Card, Field, Heading, Label, Notice, Page, colors } from "../../packages/mobile-core/src/ui";
 
 const explain = (e: unknown) => e instanceof ApiError ? e.status === 0 ? "Sin conexión con el servidor. Comprueba internet y actualiza." : `${e.code} (${e.status})` : e instanceof Error ? e.message : "Ocurrió un error inesperado.";
+const tripLabels: Record<string, string> = { ASSIGNED: "Viaje asignado", TO_PICKUP: "Yendo a recoger al pasajero", PICKED_UP: "Pasajero(s) recogido(s)", IN_TRANSIT: "En ruta al destino", ARRIVED: "Pasajero(s) entregado(s)", COMPLETED: "Viaje finalizado" };
+const actionLabels: Record<string, string> = { GO_TO_PICKUP: "Ir a recoger", CONFIRM_PICKUP: "Confirmar recogida", START_TRIP: "Iniciar viaje", CONFIRM_ARRIVAL: "Confirmar llegada", MARK_AVAILABLE: "Estoy disponible" };
+const destinationName = (direction: string) => direction === "YACUIBA_TO_VILLAMONTES" ? "Villamontes" : "Yacuiba";
 export default function App() {
   const [session, setSession] = useState<{ id: string; role: string } | null>(null);
   const [testMode, setTestMode] = useState(false);
   const [overview, setOverview] = useState<Record<string, any> | null>(null);
   const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
   const [working, setWorking] = useState(false); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
+  const [boardingCounts, setBoardingCounts] = useState<Record<string, string>>({});
   async function refresh() { setOverview(await api.driverOverview()); await api.driverPresence(); }
   useEffect(() => {
     if (!session) return;
@@ -24,6 +28,7 @@ export default function App() {
   if (loading) return <Page><Busy /></Page>;
   if (!session) return <Page><Heading title="Ruta 35 · Choferes" subtitle="Acceso con cuenta creada por administración de pruebas" /><Card><Label>Correo</Label><Field autoCapitalize="none" autoComplete="email" keyboardType="email-address" value={email} onChangeText={setEmail} placeholder="chofer@example.test" /><Label>Contraseña</Label><Field secureTextEntry value={password} onChangeText={setPassword} />{error ? <Notice error>{error}</Notice> : null}<Button title={working ? "Conectando…" : "Ingresar"} disabled={working || !testMode || !email || !password} onPress={login} /><Notice>Los choferes no pueden crear cuentas desde esta aplicación.</Notice>{!testMode ? <Notice error>Aplicación bloqueada: solo conecta con un backend separado que anuncie modo de pruebas.</Notice> : null}</Card></Page>;
   const vehicle = overview?.vehicle;
+  const trip = overview?.currentTrip;
   const occupiedSeats = (overview?.bookings ?? []).reduce((sum: number, assignment: any) => sum + (assignment.booking?.passengers ?? 0), 0);
   return <Page><ScrollView contentContainerStyle={{ gap: 12, paddingBottom: 30 }}>
     <Heading title="Ruta 35 · Choferes" subtitle={`Sesión de chofer · ${email}`} />
@@ -31,11 +36,19 @@ export default function App() {
     {error ? <Notice error>{error}</Notice> : null}
     <View style={{ flexDirection: "row", gap: 8 }}><Button title="Actualizar" secondary onPress={() => act(refresh)} /><Button title="Salir" secondary onPress={logout} /></View>
     {!overview ? <Card><Notice>No hay turno activo disponible.</Notice><Button title="Volver a consultar" secondary onPress={() => act(refresh)} /></Card> : <>
-      <Card><Text style={{ color: colors.ink, fontSize: 20, fontWeight: "900" }}>Vehículo {vehicle?.plate}</Text><Notice>Estado: {vehicle?.status} · Capacidad: {vehicle?.capacity}</Notice><Notice>Asientos ocupados: {occupiedSeats} / {vehicle?.capacity}</Notice><Notice>Cola de salida: {vehicle?.queueEntries?.filter((q: any) => q.active).length ?? 0}</Notice>
-        {vehicle?.status === "QUEUED" ? <Button title="Registrar salida (cambiar estado)" disabled={working} onPress={() => act(() => api.setVehicleStatus(vehicle.id, "ON_TRIP"))} /> : null}
-        {vehicle?.status === "ON_TRIP" ? <Button title="Liberar vehículo al terminar" secondary disabled={working} onPress={() => act(() => api.setVehicleStatus(vehicle.id, "AVAILABLE"))} /> : null}
-        <Notice>El backend solo registra el estado del vehículo; no registra hora de abordaje ni llegada.</Notice>
+      <Card><Text style={{ color: colors.ink, fontSize: 20, fontWeight: "900" }}>Vehículo {vehicle?.plate}</Text><Notice>Estado del vehículo: {vehicle?.status} · Capacidad: {vehicle?.capacity}</Notice><Notice>Asientos reservados: {occupiedSeats} / {vehicle?.capacity}</Notice><Notice>Fila: {overview?.queue ? `${overview.queue.direction} · posición ${overview.queue.position}` : "Fuera de fila"}</Notice>
+        <Notice>El estado del vehículo y el estado del viaje son independientes. Las acciones registran la hora y no alteran asientos reservados ni pagos.</Notice>
       </Card>
+      {trip ? <Card><Text style={{ color: colors.ink, fontSize: 18, fontWeight: "900" }}>Flujo del viaje</Text><Notice>{tripLabels[trip.status] ?? trip.status} · {trip.direction === "YACUIBA_TO_VILLAMONTES" ? "Yacuiba → Villamontes" : "Villamontes → Yacuiba"}</Notice>
+        {trip.assignments?.map((a: any) => <View key={a.bookingId} style={{ gap: 5, marginTop: 6 }}><Notice>Reserva {a.bookingId.slice(-6)} · {a.booking.kind} · {a.booking.passengers} asientos reservados · Bs {a.booking.totalBs}</Notice>{a.actualPassengers !== null ? <Notice>Pasajeros que subieron: {a.actualPassengers}</Notice> : null}{trip.status === "TO_PICKUP" ? <><Label>¿Cuántos subieron en esta reserva? (máx. {a.booking.passengers})</Label><Field keyboardType="number-pad" value={boardingCounts[a.bookingId] ?? ""} placeholder="Introduce la cantidad real" onChangeText={(value) => setBoardingCounts((old) => ({ ...old, [a.bookingId]: value.replace(/\D/g, "").slice(0, 1) }))} /></> : null}</View>)}
+        {trip.events?.map((event: any) => <Notice key={event.id}>{tripLabels[event.toStatus] ?? event.toStatus} · {new Date(event.createdAt).toLocaleString("es-BO")}</Notice>)}
+        {trip.status === "ASSIGNED" ? <Button title="Ir a recoger" disabled={working || vehicle?.status !== "QUEUED"} onPress={() => act(() => api.tripAction(trip.id, "GO_TO_PICKUP"))} /> : null}
+        {trip.status === "TO_PICKUP" ? <Button title="Confirmar recogida" disabled={working || !trip.assignments?.length || trip.assignments.some((a: any) => !/^\d+$/.test(boardingCounts[a.bookingId] ?? "") || Number(boardingCounts[a.bookingId]) > a.booking.passengers)} onPress={() => act(() => api.tripAction(trip.id, "CONFIRM_PICKUP", Object.fromEntries(trip.assignments.map((a: any) => [a.bookingId, Number(boardingCounts[a.bookingId])]))))} /> : null}
+        {trip.status === "PICKED_UP" ? <Button title="Iniciar viaje" disabled={working} onPress={() => act(() => api.tripAction(trip.id, "START_TRIP"))} /> : null}
+        {trip.status === "IN_TRANSIT" ? <Button title="Confirmar llegada" disabled={working} onPress={() => act(() => api.tripAction(trip.id, "CONFIRM_ARRIVAL"))} /> : null}
+        {trip.status === "ARRIVED" ? <Button title="Estoy disponible" secondary disabled={working} onPress={() => act(() => api.tripAction(trip.id, "MARK_AVAILABLE"))} /> : null}
+        {trip.status === "COMPLETED" && vehicle?.status === "AVAILABLE" && !overview?.queue ? <Button title={`Unirme a la fila de ${destinationName(trip.direction)}`} secondary disabled={working} onPress={() => act(() => api.joinDestinationQueue(trip.id))} /> : null}
+      </Card> : null}
       <Heading title="Solicitudes compatibles" />
       {(overview.requests ?? []).length ? overview.requests.map((b: any) => <Card key={b.id}><Text style={{ color: colors.ink, fontWeight: "900" }}>{b.origin} → {b.destination} · {b.kind}</Text><Notice>{b.passengers} pasajero(s) · Bs {b.totalBs} · {b.status}</Notice><Notice>Recogida: {b.pickupPoint} {b.pickupReference ?? ""}</Notice><Button title="Aceptar y asignar al vehículo" disabled={working || vehicle?.status !== "QUEUED"} onPress={() => act(() => api.assign(b.id, vehicle.id))} /></Card>) : <Card><Notice>Sin solicitudes compatibles por ahora.</Notice></Card>}
       <Heading title="Pasajeros y pagos" />
